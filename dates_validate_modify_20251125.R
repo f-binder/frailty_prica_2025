@@ -135,7 +135,10 @@ tg_dates <-
 
 tg_dates %>%
   ggplot(aes(y = study_id, x = date)) +
-  geom_point(shape = 21, aes(fill = date_type), size = 3, alpha = 0.8)
+  geom_point(shape = 21, aes(fill = date_type), size = 3, alpha = 0.8) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "left") +
+  guides(fill = guide_legend(direction = "vertical", title = NULL))
 
 # Validate date order
 

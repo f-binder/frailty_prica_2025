@@ -481,14 +481,13 @@ td_fu %>%
     , "grey50"
     # , "grey50"
     ),
-                    name = NULL) +
+                    name = NULL, labels = function(x) str_replace(str_to_title(str_remove(x, "follow-up: ")), "Cfs", "CFS")) +
   scale_alpha_manual(guide = "none", values = c(0, 0.7)) +
   scale_x_continuous(breaks = c(0, 1, 3, 6, 12),
                      labels = function(x) ifelse(x == 0, "Baseline", paste0("Month ", as.character(x)))) +
-  # scale_x_discrete(labels = c("Baseline", "Month 6", "Month 12"), expand = expansion(mult = c(0.15, 0.15))) +
   labs(x = NULL) +
   theme_minimal(base_size = txt_sz*1.1) +
-  theme(legend.position = "right",
+  theme(legend.position = "top",
         # axis.title.x = element_blank(),
         axis.text = element_text(size = txt_sz*1.5)) #+
   # guides(fill = guide_legend(override.aes = list(alpha = 0.7), ncol = 2))
@@ -513,7 +512,7 @@ td_fu %>%
   gt::gt() %>%
   gt::fmt_percent(columns = p, decimals = 1) %>%
   gt::cols_align(align = "left") %>%
-  gt::co
+  gt::cols_label(status_fu = "6-month status", p = "Perc.")
 
 
 
