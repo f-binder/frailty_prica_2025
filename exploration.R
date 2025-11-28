@@ -49,6 +49,7 @@ mutate(timepoint_n = case_when(timepoint == "baseline" ~ 0,
   skimr::skim(cfs_score, grip_average_kg, walk_time, walk_mpers, minicog_score, phq_total_score, phq_10) %>%
   as_tibble() %>%
   select(timepoint_n, variable = skim_variable, n_missing, matches("mean|sd\\b|p0|p25|p50|p75|p100")) %>%
+  mutate(across(where(is.numeric), ~round(., 2))) %>%
   arrange(timepoint_n, variable) %>% View() # OK, matches reported summary measures
 
 
