@@ -114,17 +114,77 @@ glimpse(baseline_updated_raw)
 glimpse(repeated_measures_updated_raw)
 glimpse(survival_updated_raw)
 
+## ---- Type-integrity check: catch a mis-typed numeric column early --------
+# readxl types an entire column as character if even one cell holds
+# non-numeric text - which is exactly how crp's "<1.0" (below-detection-
+# limit)
+
+expected_numeric_cols <- c(
+  "age", "ldh", "crp", "albumin", "hctci_score", "cirs_total", "ves13_score",
+  "karnofsky", "ecog", "cart_line", "los_days"
+)
+known_char_numeric_cols <- c("crp")
+
+wrongly_typed <- expected_numeric_cols[
+  sapply(baseline_updated_raw[expected_numeric_cols], class) == "character"
+]
+unexpected_wrongly_typed <- setdiff(wrongly_typed, known_char_numeric_cols)
+unexpected_wrongly_typed
+
+if (length(unexpected_wrongly_typed) > 0) {
+  stop(
+    "Column(s) expected to be numeric were imported as character and are ",
+    "not yet handled: ", paste(unexpected_wrongly_typed, collapse = ", "),
+    ". Likely a non-numeric annotation (e.g. '<1.0'); add explicit parsing ",
+    "in 02_clean_baseline.R (see how crp is handled there) before proceeding."
+  )
+}
+
+# handle here
+baseline_updated_raw %>% count(crp, sort = T)
+
+baseline_updated_raw %>%
+  select(all_of(expected_numeric_cols)) %>%
+  select(where(~!is.numeric(.))) %>% names() # non-numeric
+
+# directed fix for crp
+baseline_updated_raw %>%
+  mutate(crp2 = case_when(str_detect(crp, fixed("<1")) ~ 0.5,
+                                TRUE ~ as.numeric(crp))) %>% select(crp, crp2) %>%
+  count(crp, crp2, sort = T)
+
+
+baseline_updated_raw <- baseline_updated_raw %>%
+  mutate(across(crp, ~case_when(str_detect(., fixed("<")) ~ 0.1,
+                                TRUE ~ as.numeric(.))))
+
+baseline_prior_raw <- baseline_prior_raw %>%
+  mutate(across(crp, ~case_when(str_detect(., fixed("<")) ~ 0.1,
+                                TRUE ~ as.numeric(.))))
+
+baseline_updated_raw %>% count(crp, sort = T)
+baseline_prior_raw %>% count(crp, sort = T)
+
+  # check if they are all numeric now
+all(map_lgl(baseline_updated_raw[expected_numeric_cols], is.numeric))
+
+stopifnot(
+  "all expected numeric variables should be numeric - prior dataset" =
+    all(map_lgl(baseline_prior_raw %>% select(one_of(expected_numeric_cols)), is.numeric)),
+  "all expected numeric variables should be numeric - updated dataset" =
+    all(map_lgl(baseline_updated_raw %>% select(one_of(expected_numeric_cols)), is.numeric))
+)
+
 
 ## ---- Save ---------------------------------------------------------------
 
 processed_dir <- here("data", "processed")
-processed_dir
-# dir.create(processed_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(processed_dir, showWarnings = FALSE, recursive = TRUE)
 
 saveRDS(baseline_updated_raw, file.path(processed_dir, "baseline_updated_raw.rds"))
 saveRDS(repeated_measures_updated_raw, file.path(processed_dir, "repeated_measures_updated_raw.rds"))
 saveRDS(survival_updated_raw, file.path(processed_dir, "survival_updated_raw.rds"))
-# saveRDS(baseline_prior_raw, file.path(processed_dir, "baseline_prior_raw.rds"))
-# saveRDS(repeated_measures_prior_raw, file.path(processed_dir, "repeated_measures_prior_raw.rds"))
+saveRDS(baseline_prior_raw, file.path(processed_dir, "baseline_prior_raw.rds"))
+saveRDS(repeated_measures_prior_raw, file.path(processed_dir, "repeated_measures_prior_raw.rds"))
 
 message("\n01_import_raw.R complete. Raw .rds files written to data/processed/.")

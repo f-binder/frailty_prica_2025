@@ -183,7 +183,7 @@ cfs_indiv <- repeated_measures_clean %>%
 
 cfs_indiv
 
-# cfs_trajectory_plot <- 
+cfs_trajectory_plot <- 
 ggplot() +
   geom_line(
     data = cfs_indiv,

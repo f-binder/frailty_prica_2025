@@ -29,6 +29,8 @@
 baseline_raw <- readRDS(here("data", "processed", "baseline_updated_raw.rds"))
 glimpse(baseline_raw)
 
+baseline_prior_raw <- readRDS(here("data", "processed", "baseline_prior_raw.rds"))
+
 
 ## ---- Small helpers for the repeated yes/no [/ unknown] patterns ----------
 

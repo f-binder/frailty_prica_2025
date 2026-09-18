@@ -29,9 +29,17 @@ source(here::here("scripts", "00_packages.R"))
 survival_raw <- readRDS(here("data", "processed", "survival_updated_raw.rds"))
 baseline_clean <- readRDS(here("data", "processed", "baseline_clean.rds"))
 
+
+glimpse(survival_raw)
+
 ## ---- Derive OS and PFS ----------------------------------------------------
 
-analysis_survival <- baseline_clean %>%
+# TODO this code does not conduct an initial exploration of date order or possible
+# discrepancies, such as follow-up dates after death dates, etc (more for the
+# longitudinal data exploration). However, prior validations seemed OK.
+
+analysis_survival <- 
+baseline_clean %>%
   select(study_id, date_infusion) %>%
   inner_join(survival_raw, by = "study_id") %>%
   mutate(
@@ -66,6 +74,8 @@ analysis_survival <- baseline_clean %>%
     death_disease,   # 0 = not disease-related, 1 = disease-related, 2 = unknown - see dictionary
     death_reason, eos_reason
   )
+
+analysis_survival
 
 ## ---- Sanity checks ---------------------------------------------------
 

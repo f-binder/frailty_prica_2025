@@ -56,8 +56,8 @@ surv %>%
 
 
 # Are all follow-up visits in order? - OK for previous data
-long %>%
-  filter(!is.na(study_id) & study_id %in% base$study_id) %>%
+# long %>% filter(!is.na(study_id) & study_id %in% base$study_id) %>%
+repeated_measures_clean %>%
   mutate(timepoint_n = case_when(timepoint == "baseline" ~ 0,
                                  TRUE ~ as.numeric(str_extract(timepoint, "\\d+")))) %>%
   relocate(study_id, timepoint_n) %>%
@@ -66,13 +66,16 @@ long %>%
   summarise(ordered_dates = !is.unsorted(dov)) %>% count(ordered_dates) # Ok, assessment dates are ordered
 
 
-td <- long %>%
+td <- 
+  # long %>% # for previous data
+  repeated_measures_clean %>% # for new data
   select(study_id, timepoint, dov, cfs_score, grip_average_kg) %>%
   mutate(timepoint_n = case_when(timepoint == "baseline" ~ 0,
                                  TRUE ~ as.numeric(str_extract(timepoint, "\\d+")))) %>%
   relocate(study_id, timepoint_n) %>%
   left_join(
-    base %>%
+    # base %>% # for old data
+    survival_raw %>% # new data
       select(study_id, eos_dov, eos_reason, prog_date, death_date)
   )
 
