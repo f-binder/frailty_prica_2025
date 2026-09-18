@@ -216,7 +216,7 @@ ggplot() +
     title = "CFS trajectories over the first year post-CAR-T",
     subtitle = "Grey: individual patients. Blue: population mean +/- SD (n declines over follow-up)",
     x = "Months from CAR-T infusion",
-    y = "CFS score"
+    y = "Clinical Frailty Scale (CFS)"
   ) +
   theme_minimal(base_size = 12)
 
