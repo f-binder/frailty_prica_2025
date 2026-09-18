@@ -41,12 +41,16 @@ recode_yn_unknown <- function(x) {
 }
 
 ## --- check IDs in new vs old
-map(list(baseline_prior_raw, baseline_raw), function(x) x %>% janitor::get_dupes(study_id))
+  # duplicates?
+map(list(baseline_prior_raw, baseline_raw),
+    function(x) x %>% janitor::get_dupes(study_id))
 
-setdiff(baseline_prior_raw$study_id, baseline_raw$study_id) # a previous ID is now missing
+setdiff(baseline_prior_raw$study_id, baseline_raw$study_id) # a previous ID 76 is now missing
 
+  # check missing case (in prior dataset)
 baseline_prior_raw %>% filter(study_id == 76) %>%
   relocate(study_id, cart_product) %>% glimpse()
+
 
 ## ---- check coded variables as reported in the codebook ---------------
 
@@ -90,9 +94,6 @@ baseline_raw %>%
 baseline_prior_raw %>% count(cns_current) %>% add_pcump()
   
 
-baseline_raw %>%
-  count() %>% add_pcump()
-
 # cart_product - code book: 0 Kymriah, 1 Yescarta, 2 JCAR Trial, 3 Tecartus
 baseline_raw %>%
   count(cart_product) %>% add_pcump()
@@ -100,7 +101,7 @@ baseline_raw %>%
 # yes/no for the following:
 map(list("crs_yn", "icans_yn", "icu_yn", "bridge_yn", "asct", "asct_relapse", 
   "active_mal", "allosct_yn", "ae_yn"),
-  function(nombre) baseline_raw %>% count(pick(one_of(nombre))))
+  function(nombre) baseline_raw %>% count(pick(one_of(nombre))) %>% add_pcump())
 
   # some should be correlative:
   baseline_raw %>% count(asct, asct_relapse) # OK
@@ -198,29 +199,96 @@ baseline_clean <- baseline_raw %>%
     los_days = as.numeric(los_days)
   )
 
-## ---- Fields deliberately left un-recoded ---------------------------------
-# Listed explicitly (rather than silently left alone) so it's clear this was
-# a decision, not an oversight.
-#   - bridge_chemoreg, bridge_steroids, active_mal_details, lym_other,
-#     icu_reason_1/2: free-text fields per the code book - not reducible to
-#     a factor.
+
+# Bridge -----------------------------------
+
 #   - bridge___0/1/2/3: code book confirms these are REDCap checkbox
 #     indicators for bridging chemo (___0), radiation (___1) and steroids
 #     (___2) respectively; ___3 is not defined in the code book at all and
 #     is constant 0 (unused) in this cohort. Left as raw 0/1 - bridge_yn
 #     and the named bridging-type fields already cover this; relabel at the
 #     point of use if a single derived "bridging type" column is needed.
+
+
+baseline_clean %>%
+  select(contains("bridge")) %>% glimpse()
+
+
+# recode bridege chemoreg
+baseline_clean %>%
+  count(bridge_chemoreg) %>%
+  pull(1) %>% dput()
+
+baseline_clean %>%
+  mutate(
+    bridge_chemoreg_clean = case_when(
+      str_detect(bridge_chemoreg, regex("\\bpola", ignore_case = TRUE)) &
+        str_detect(bridge_chemoreg, regex("\\bbr\\b", ignore_case = TRUE))  ~ "Polatuzumab BR",
+      str_detect(bridge_chemoreg, regex("\\bpola", ignore_case = TRUE)) &
+        str_detect(bridge_chemoreg, regex("\\br", ignore_case = T)) &
+        !str_detect(bridge_chemoreg, regex("\\bbr\\b", ignore_case = TRUE)) ~ "Polatuzumab R",
+      TRUE ~ bridge_chemoreg
+    )) %>% count(bridge_chemoreg_clean, bridge_chemoreg) %>%
+  arrange(pick(1), desc(n))
+
+baseline_clean %>%
+  mutate(across(bridge_chemoreg,
+                function(x) { case_when(
+                  str_detect(x, regex("\\bpola", ignore_case = TRUE)) &
+                    str_detect(x, regex("\\bbr\\b", ignore_case = TRUE))  ~ "Polatuzumab BR",
+                  str_detect(x, regex("\\bpola", ignore_case = TRUE)) &
+                    str_detect(x, regex("\\br", ignore_case = T)) &
+                    !str_detect(x, regex("\\bbr\\b", ignore_case = TRUE)) ~ "Polatuzumab R",
+                  TRUE ~ x
+                )})) %>%
+  count(bridge_chemoreg, sort = T)
+
+
+# change
+baseline_clean <- baseline_clean %>%
+  mutate(across(bridge_chemoreg,
+                function(x) { case_when(
+                  str_detect(x, regex("\\bpola", ignore_case = TRUE)) &
+                    str_detect(x, regex("\\bbr\\b", ignore_case = TRUE))  ~ "Polatuzumab BR",
+                  str_detect(x, regex("\\bpola", ignore_case = TRUE)) &
+                    str_detect(x, regex("\\br", ignore_case = T)) &
+                    !str_detect(x, regex("\\bbr\\b", ignore_case = TRUE)) ~ "Polatuzumab R",
+                  TRUE ~ x
+                )}))
+
+baseline_clean %>%
+  count(bridge_chemoreg)
+
+
+## ---- Fields deliberately left un-recoded ---------------------------------
+# Listed explicitly (rather than silently left alone) so it's clear this was
+# a decision, not an oversight.
+#   - bridge_chemoreg, bridge_steroids, active_mal_details, lym_other,
+#     icu_reason_1/2: free-text fields per the code book - not reducible to
+#     a factor.
+baseline_clean %>%
+  select(bridge_chemoreg, bridge_steroids, active_mal_details, lym_other,
+         icu_reason_1, icu_reason_2) %>%
+  glimpse() # they are all character or empty
+
+baseline_clean %>%
+  select(bridge_chemoreg, bridge_steroids, active_mal_details, lym_other,
+         icu_reason_1, icu_reason_2) %>%
+  map(., ~sort(table(.), decreasing = T))
+
+
 #   - ALP/ALT/AST/anemia/hypocalcemia/hypokalemia/hyponatremia/
 #     hypophosphatemia/INR/lymphocyte/neutrophil/platelet/PTT/WBC_highest:
 #     lab-abnormality grade fields, code book confirms these are already
 #     directly interpretable integer grades - no relabelling needed.
+
 #   - cart_line: not defined in this code book at all (it predates the
 #     field - cart_line first appears in the 10-Apr-2026 extract, not the
 #     09-Jul-2025 one this code book documents). Plausibly related to the
 #     code book's `tx_lines` ("number of prior lines of treatment") as
 #     tx_lines + 1, but that field isn't present in this extract either, so
 #     the relationship isn't verified - left as a plain integer.
-#
+
 # Code book fields NOT present in this extract at all (documented in the
 # code book but not exported to this file - confirm with the study team if
 # they're needed): education_years, race_Indigenous/asian/black/indian/
@@ -236,5 +304,18 @@ stopifnot(
     all(dplyr::between(baseline_clean$karnofsky, 10, 100), na.rm = TRUE)
 )
 
+
 message("--- Recoded factor levels (spot-check) ---")
-mes
+message("sex:\n", paste(capture.output(print(table(baseline_clean$sex))), collapse = "\n"))
+message("lym_diagnosis:\n", paste(capture.output(print(table(baseline_clean$lym_diagnosis))), collapse = "\n"))
+message("rel_trans_yn:\n", paste(capture.output(print(table(baseline_clean$rel_trans_yn))), collapse = "\n"))
+message("karnofsky (%):\n", paste(capture.output(print(table(baseline_clean$karnofsky))), collapse = "\n"))
+
+message("\nRows: ", nrow(baseline_clean), " | Cols: ", ncol(baseline_clean))
+message("Infusion date range: ", min(baseline_clean$date_infusion), " to ", max(baseline_clean$date_infusion))
+
+## ---- Save ---------------------------------------------------------------
+
+saveRDS(baseline_clean, here("data", "processed", "baseline_clean.rds"))
+
+message("\n02_clean_baseline.R complete. Wrote data/processed/baseline_clean.rds")

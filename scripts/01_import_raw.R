@@ -62,7 +62,7 @@ baseline_updated_raw <- read_excel(
 ) %>%
   rename_with(str_trim)
 
-baseline_updated_raw
+glimpse(baseline_updated_raw)
 
 repeated_measures_updated_raw <- read_excel(
   updated_path,
