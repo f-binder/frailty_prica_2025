@@ -254,11 +254,62 @@ survival_updated_raw |> count(eos_reason)
 survival_updated_raw |> count(eos_reason, !is.na(prog_date))
 
 survival_updated_raw |> filter(!is.na(prog_date)) |> count(eos_reason)
-# patients who progressed had their EOS due to either withdrawal or 
+# patients who progressed had their EOS due to either Withdrawal or Progression - ok
 
+
+# number of deaths
+survival_updated_raw |>
+  group_by(eos_reason) |>
+  summarise(n = n_distinct(study_id),
+            nrow = n(),
+            n_deaths = sum(!is.na(death_date)))
+
+# there are deaths in all groups - explore manually
+# EOS reason 0: Completed participation
+survival_updated_raw |>
+  filter(eos_reason == 0) %>%
+  filter(!is.na(death_date)) %>%
+  select(eos_reason, study_id, eos_dov, death_date, prog_date) %>% cw()
+
+# EOS reason 1: Withdrawal
+survival_updated_raw |>
+  filter(eos_reason == 1) %>%
+  filter(!is.na(death_date)) %>%
+  select(eos_reason, study_id, eos_dov, death_date, prog_date) %>% cw()
+
+# EOS reason 2 -  Disease Progression
+survival_updated_raw |>
+  filter(eos_reason == 2) %>%
+  filter(!is.na(death_date)) %>%
+  select(eos_reason, study_id, eos_dov, death_date, prog_date) %>%
+  mutate(flag = ifelse(is.na(prog_date) | prog_date != eos_dov, 1, NA)) %>% cw()
+
+# EOS reason 3 -  Death
+survival_updated_raw |>
+  filter(eos_reason == 3) %>%
+  # filter(!is.na(death_date)) %>%
+  select(eos_reason, study_id, eos_dov, death_date, prog_date) %>%
+  mutate(flag = ifelse(is.na(death_date) | death_date != eos_dov, 1, NA)) %>% cw()
+
+# EOS Reason 4 - Ineligible - no cases
+survival_updated_raw |> filter(eos_reason == 4) 
+
+# EOS reason 5 -  PI discretion
+survival_updated_raw |>
+  filter(eos_reason == 5) %>%
+  # filter(!is.na(death_date)) %>%
+  select(eos_reason, study_id, eos_dov, death_date, prog_date) %>%
+  mutate(flag = ifelse(is.na(death_date) | death_date != eos_dov, 1, NA)) %>% cw()
+
+
+# TODO: this approach might need to be reviewed based on the review above
+# right not, we are considering all progression /death deaths regardless of weather 
+# patients' EOS dates were earlier
 
 progression_flag <- survival_updated_raw %>%
   transmute(study_id, progressed = if_else(!is.na(prog_date), "Yes", "No"))
+
+progression_flag
 
 event_data <- analysis_wide %>%
   left_join(progression_flag, by = "study_id") %>%
@@ -266,8 +317,10 @@ event_data <- analysis_wide %>%
 
 glimpse(event_data)
 
-vital_status_counts <- event_data %>% count(category = "Vital status", level = vital_status) %>% add_pcump() %>% select(category, level, n, p) %>% rename(pct = p)
-progression_counts  <- event_data %>% count(category = "Progression", level = progressed) %>% add_pcump() %>% select(category, level, n, p) %>% rename(pct = p)
+vital_status_counts <- event_data %>% count(category = "Vital status", level = vital_status) %>% 
+  add_pcump() %>% select(category, level, n, p) %>% rename(pct = p)
+progression_counts  <- event_data %>% count(category = "Progression", level = progressed) %>% 
+  add_pcump() %>% select(category, level, n, p) %>% rename(pct = p)
 pfs_event_counts    <- event_data %>%
   mutate(level = if_else(pfs_event == 1, "Progression or death", "Alive, no progression")) %>%
   count(category = "PFS event", level) %>% add_pcump() %>%
@@ -297,16 +350,21 @@ print(progression_by_vital)
 # Labelled here for the table only - analysis_wide keeps the raw numeric
 # code, since later scripts (competing-risk analyses) need it as such.
 
-# TODO here, transformation should count as relapse-related mortality -
+# TODO here, lymphoma transformation should count as relapse-related mortality -
 # we need to review one case of T cell lymphoma.
 
 glimpse(event_data)
 
 event_data %>% count(death_disease, death_reason)
 
+# create my own survival times
+# TODO this would need to be migrated to data wrangling earlier
+survival_updated_raw %>%
+  
+
 event_data %>%
   filter(str_detect(tolower(death_reason), fixed("t cell"))) %>%
-  glimpse()
+  glimpse() # study id 30
 
 
 death_cause_summary <- event_data %>%
