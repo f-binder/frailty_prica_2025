@@ -38,6 +38,37 @@ glimpse(survival_raw)
 # discrepancies, such as follow-up dates after death dates, etc (more for the
 # longitudinal data exploration). However, prior validations seemed OK.
 
+# Validation before derivation (in process)
+
+   # 1. all patients should have progression, death or last followup date
+survival_updated_raw %>%
+  select(study_id, eos_dov, prog_date, death_date, last_followup) %>%
+  rowwise() %>%
+  mutate(n_full = sum(!is.na(c_across(c(prog_date, death_date, last_followup))))) %>%
+  count(n_full) # OK, at least one
+
+# see pts with 2
+survival_updated_raw %>%
+  select(study_id, eos_dov, prog_date, death_date, last_followup) %>%
+  rowwise() %>%
+  mutate(n_full = sum(!is.na(c_across(c(prog_date, death_date, last_followup))))) %>%
+  filter(n_full > 1) %>% View() # they all have prog_date and one of the other 2 - OK
+
+  # 2. no date should be later than death
+survival_updated_raw %>%
+  select(study_id, eos_dov, prog_date, death_date, last_followup) %>%
+  rowwise() %>%
+  mutate(max_non_death_date = max(c_across(c(prog_date, last_followup, eos_dov)), na.rm = T)) %>%
+  filter(!is.na(death_date)) %>%
+  ungroup() %>%
+  summarise(sum(death_date < max_non_death_date)) # death, when present, is always the latest date for all patients.
+
+
+
+survival_updated_raw %>%
+  select(study_id, eos_dov, prog_date, death_date, last_followup) %>%
+  filter(!is.na(last_followup) & !is.na(death_date))
+
 analysis_survival <- 
 baseline_clean %>%
   select(study_id, date_infusion) %>%

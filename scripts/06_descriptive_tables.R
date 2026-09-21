@@ -123,7 +123,7 @@ describe_cont <- function(data, var) {
 categorical_vars <- c(
   "sex", "diagnosis", "lym_nhl", "cns_current", "active_mal",
   "asct", "allosct_yn", "karnofsky", "ecog",
-  "bridge_yn", "bridge___0", "bridge___1", "bridge___2",
+  "bridge_yn", "bridge___0", "bridge___1", "bridge___2", "bridge_chemoreg",
   "cart_product", "crs_yn", "crs_highestgrade", "icans_yn", "icans_highest",
   "icu_yn"
 )
@@ -134,10 +134,14 @@ table1_categorical <-
 message("--- Table 1: categorical (spot-check, first 20 rows) ---")
 print(table1_categorical %>% select(label, level, n, pct), n = 20)
 
+table1_categorical
+table1_categorical %>% cw()
+
 ## ---- Table 1: continuous variables ---------------------------------------
 
 continuous_vars <- c(
-  "age", "ldh", "crp", "albumin", "hctci_score", "cirs_total", "ves13_score",
+  "age", "bridge_chemocycle", "bridge_raddose", "bridge_radfrac",
+  "ldh", "crp", "albumin", "hctci_score", "cirs_total", "ves13_score",
   "los_days", "cfs_score", "grip_average_kg", "walk_time", "walk_mpers",
   "minicog_score", "phq_total_score"
 )
@@ -153,7 +157,7 @@ table1_continuous <- map_dfr(continuous_vars, ~ describe_cont(analysis_wide, .x)
 
 message("\n--- Table 1: continuous ---")
 print(table1_continuous %>% select(label, n, missing, mean, sd, median, min, max))
-
+table1_continuous %>% cw()
 
 ## ---- Follow-up summary ------------------------------------------------
 
@@ -170,8 +174,88 @@ followup_summary <- tibble(
 
 message("\n--- Follow-up summary ---")
 print(followup_summary)
+followup_summary %>% cw()
+
+glimpse(analysis_wide)
+
+## Median follow-up by reverse Kaplan Meier
+library(tidyverse)
+library(survival)
+
+# df: one row per patient
+#   time_os   = time from CAR T infusion to death or last contact (months)
+#   death     = 1 if died, 0 if alive at last contact
+#   time_pfs  = time from infusion to progression/death/last assessment
+#   pfs_event = 1 if progression or death, 0 otherwise
+
+# --- OS-based follow-up (reverse KM: censoring is the "event") ---
+fit_fu_os <- survfit(Surv(os_months, 1 - os_event) ~ 1, data = analysis_wide)
+q_os <- quantile(fit_fu_os, probs = 0.5, conf.int = TRUE)
+q_os
+
+fu_os <- tibble(
+  endpoint  = "OS",
+  median_fu = q_os$quantile,
+  lcl       = q_os$lower,
+  ucl       = q_os$upper
+)
+
+fu_os
+
+# --- PFS-based follow-up ---
+fit_fu_pfs <- survfit(Surv(time_pfs, 1 - pfs_event) ~ 1, data = df)
+q_pfs <- quantile(fit_fu_pfs, probs = 0.5, conf.int = TRUE)
+
+fu_pfs <- tibble(
+  endpoint  = "PFS",
+  median_fu = q_pfs$quantile,
+  lcl       = q_pfs$lower,
+  ucl       = q_pfs$upper
+)
+
+
+# Potential follow-up, as a sensitivity analysis
+glimpse(analysis_wide)
+glimpse(survival_updated_raw)
+
+baseline_clean %>%
+  select(study_id, date_infusion)
+
+max(c(survival_updated_raw$last_followup, survival_updated_raw$death_date), na.rm = T)
+
+survival_updated_raw %>%
+  summarise(across(c(last_followup, death_date), ~max(., na.rm = T)))
+
+survival_updated_raw %>%
+  arrange(desc(last_followup)) %>%
+  select(study_id, last_followup)
+
+cutoff_date <- as.Date("2026-04-04")
+
+baseline_clean  |>
+  select(study_id, date_infusion) |>
+  mutate(pot_fu = as.numeric(cutoff_date - date_infusion) / 30.4375) |>
+  summarise(median_potential_fu_months = median(pot_fu))
+
+
 
 ## ---- Event counts ------------------------------------------------------
+glimpse(survival_updated_raw)
+# eos_reason:
+# 0 Completed Participation
+# 1 Patient Withdrawal
+# 2 Disease Progression
+# 3 Death
+# 4 Ineligible
+# 5 PI discretion
+
+survival_updated_raw |> count(eos_reason)
+
+survival_updated_raw |> count(eos_reason, !is.na(prog_date))
+
+survival_updated_raw |> filter(!is.na(prog_date)) |> count(eos_reason)
+# patients who progressed had their EOS due to either withdrawal or 
+
 
 progression_flag <- survival_updated_raw %>%
   transmute(study_id, progressed = if_else(!is.na(prog_date), "Yes", "No"))
