@@ -24,7 +24,8 @@ required_pkgs <- c(
   "cmprsk",     # cuminc(), crr() - competing-risks / Fine-Gray
   "flexmix",    # finite mixture models, used for CFS trajectory classification
   "broom",      # tidy() model objects into data frames
-  "clipr"       # clipboard I/O, used by cw() below
+  "clipr",      # clipboard I/O, used by cw() below
+  "patchwork"
 )
 
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
