@@ -190,21 +190,28 @@ mva_frailty_panel <- bind_rows(
 # and are the two constructs most directly relevant to bedside triage.
 
 km_os_cfs <- survfit(Surv(os_months, os_event) ~ cfs_cat, data = d)
+
 p1 <- ggsurvplot(
   km_os_cfs, data = d, risk.table = TRUE, pval = TRUE,
   xlab = "Months from CAR-T infusion", ylab = "Overall survival",
   legend.title = "Baseline CFS", palette = c("#2C7BB6", "#D7191C")
 )
+
+p1
+
 png(file.path(figures_dir, "km_os_by_cfs_cat.png"), width = 7, height = 6.5, units = "in", res = 300)
 print(p1)
 dev.off()
 
 km_os_ecog <- survfit(Surv(os_months, os_event) ~ ecog_cat, data = d)
+
 p2 <- ggsurvplot(
   km_os_ecog, data = d, risk.table = TRUE, pval = TRUE,
   xlab = "Months from CAR-T infusion", ylab = "Overall survival",
   legend.title = "Baseline ECOG", palette = c("#2C7BB6", "#D7191C")
 )
+p2
+
 png(file.path(figures_dir, "km_os_by_ecog_cat.png"), width = 7, height = 6.5, units = "in", res = 300)
 print(p2)
 dev.off()
@@ -247,12 +254,14 @@ dev.off()
 # support. Relapse-death (21 events, cap = 2) can support a small MVA and
 # gets one, reusing select_mva_candidates_cox()/fit_mva_cox() from Part A.
 
+  # TODO sensitivity analysis changing the "unknowns"
 d <- d %>%
   mutate(
     cr_event = case_when(
       os_event == 0 ~ 0,        # censored (alive)
       death_disease == 1 ~ 1,   # relapse-related death
       death_disease == 0 ~ 2,   # non-relapse death (NRM)
+      death_disease == 3 ~ 2,   # TODO consider changing / commenging out
       TRUE ~ 3                  # unknown cause (death_disease == 2, or missing)
     ),
     nrm_event = as.integer(cr_event == 2),
@@ -302,7 +311,9 @@ print(fit_cause_specific_cox(d, "relapse_event", "cfs_score"))
 ## ---- Relapse-death MVA (EPV-capped, reusing Part A's helpers) ------------
 
 relapse_n_events <- sum(d$relapse_event)
-relapse_candidates <- select_mva_candidates_cox(uva_relapse, relapse_n_events)
+relapse_candidates <- select_mva_candidates_cox(uva_relapse, relapse_n_events, epv = 5)
+relapse_n_events
+
 message(
   "\nRelapse-death MVA candidates (EPV cap = ", floor(relapse_n_events / 10), "): ",
   paste(relapse_candidates, collapse = ", ")
@@ -315,7 +326,8 @@ mva_relapse_death <- if (length(relapse_candidates) >= 2) {
   tibble()
 }
 
-nrm_candidates <- select_mva_candidates_cox(uva_nrm, sum(d$nrm_event))
+nrm_candidates <- select_mva_candidates_cox(uva_nrm, sum(d$nrm_event), epv = 5) # epv does not seem to change selection in practice
+nrm_candidates
 message(
   "NRM MVA candidates (EPV cap = ", floor(sum(d$nrm_event) / 10), "): ",
   if (length(nrm_candidates) == 0) "(none - cap is 0 with only 9 events)" else paste(nrm_candidates, collapse = ", ")
@@ -397,6 +409,8 @@ cif_plot <- ggplot(ci_df, aes(x = time, y = est, color = group)) +
   labs(x = "Months from CAR-T infusion", y = "Cumulative incidence", color = "Baseline CFS") +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
+
+cif_plot
 
 png(file.path(figures_dir, "cif_by_cfs_cat.png"), width = 9, height = 5, units = "in", res = 300)
 print(cif_plot)
