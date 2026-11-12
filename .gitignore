@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+Rplots.pdf
+
+# Patient data and analysis outputs: never commit
+data/
+output/
