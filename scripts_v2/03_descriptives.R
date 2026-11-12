@@ -103,7 +103,7 @@ nrm_groups <- d %>%
     str_detect(str_to_lower(death_reason), "leuk|mds|lymphoma") ~ "Second myeloid/lymphoid neoplasm",
     str_detect(str_to_lower(death_reason), "maid") ~ "MAID",
     TRUE ~ "Other / unexplained")) %>%
-  count(group)
+  count(group) %>% mutate(p = 100*n/sum(n))
 print(nrm_groups)
 save_table(nrm_groups, "nrm_categories")
 
