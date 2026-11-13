@@ -95,11 +95,14 @@ plot_alluvial <- function(st, title, subtitle) {
   ggplot(st, aes(x = visit_month, stratum = state, alluvium = study_id, fill = state)) +
     geom_flow(alpha = 0.6, width = 0.42) +
     geom_stratum(width = 0.42, alpha = 0.95, colour = "white", linewidth = 0.4) +
-    geom_text(stat = "stratum", size = 2.9, lineheight = 0.9,
-              aes(label = ifelse(after_stat(count) >= 3,
-                                 paste0(after_stat(count), "\n(", percent(after_stat(prop), accuracy = 1), ")"), ""),
-                  colour = after_stat(stratum) %in% levels(st$state)[c(4, 5)])) +
-    scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = COL$ink), guide = "none") +
+    # stratum labels: white on the dark strata (frail, event), black elsewhere
+    # (two fixed-colour layers rather than a colour scale, so the labels keep
+    # their colour when the plot is combined with others)
+    lapply(list(list(dark = TRUE, col = "white"), list(dark = FALSE, col = COL$ink)), function(o)
+      geom_text(stat = "stratum", size = 2.9, lineheight = 0.9, colour = o$col,
+                aes(label = ifelse(after_stat(count) >= 3 &
+                                     (after_stat(stratum) %in% levels(st$state)[c(4, 5)]) == o$dark,
+                                   paste0(after_stat(count), "\n(", percent(after_stat(prop), accuracy = 1), ")"), "")))) +
     scale_fill_manual(values = cols, name = NULL, drop = FALSE) +
     scale_x_continuous(breaks = unname(VISITS), labels = x_lab, expand = expansion(add = 0.3)) +
     scale_y_continuous(breaks = seq(0, 80, 20), expand = expansion(mult = c(0.01, 0.02))) +
