@@ -36,8 +36,8 @@ uva <- bind_rows(
 ) %>% relocate(outcome, covariate)
 save_table(uva %>% mutate(across(c(est, lo, hi, c_index), ~ round(.x, 3))), "cox_univariable")
 
-message("Univariable Cox, p < 0.10:")
-print(uva %>% filter(p < 0.10) %>% transmute(outcome, term, hr = fmt_ci(est, lo, hi), p = fmt_p(p), n, events), n = Inf)
+message("Univariable Cox, p < 0.10 ", SIG_LEGEND, ":")
+print(uva %>% filter(p < 0.10) %>% transmute(outcome, term, hr = fmt_ci(est, lo, hi), p = fmt_p_star(p), n, events), n = Inf)
 
 get_uva <- function(outc, term) uva %>% filter(outcome == outc, .data$term == !!term)
 r <- get_uva("OS", "cfs_score");   record("os_hr_cfs_unadj", r$est, r$lo, r$hi, r$p)
@@ -58,8 +58,8 @@ adjusted <- bind_rows(
             mutate(outcome = "PFS", covariate = .x))
 ) %>% filter(!term %in% c("age", "log2_ldh")) %>% relocate(outcome, covariate)
 save_table(adjusted %>% mutate(across(c(est, lo, hi, c_index), ~ round(.x, 3))), "cox_adjusted")
-message("\nFrailty measures adjusted for age + log2 LDH:")
-print(adjusted %>% transmute(outcome, term, hr = fmt_ci(est, lo, hi), p = fmt_p(p), n, events), n = Inf)
+message("\nFrailty measures adjusted for age + log2 LDH ", SIG_LEGEND, ":")
+print(adjusted %>% transmute(outcome, term, hr = fmt_ci(est, lo, hi), p = fmt_p_star(p), n, events), n = Inf)
 
 r <- adjusted %>% filter(outcome == "OS", term == "cfs_score");  record("os_hr_cfs_adj", r$est, r$lo, r$hi, r$p)
 r <- adjusted %>% filter(outcome == "PFS", term == "cfs_score"); record("pfs_hr_cfs_adj", r$est, r$lo, r$hi, r$p)
@@ -99,9 +99,9 @@ competing <- pmap_dfr(cr_specs, function(definition, covs, failcode) {
            cause = cause_lab, adjusted = if (length(covs) > 1) "age + log2 LDH" else "none", .before = 1)
 })
 save_table(competing %>% mutate(across(c(est, lo, hi), ~ round(.x, 3))), "competing_risks")
-message("\nCompeting risks (first term shown):")
+message("\nCompeting risks (first term shown) ", SIG_LEGEND, ":")
 print(competing %>% transmute(definition = str_sub(definition, 1, 12), cause, method = str_sub(method, 1, 14),
-                              term, adjusted, est = fmt_ci(est, lo, hi), p = fmt_p(p), events), n = Inf)
+                              term, adjusted, est = fmt_ci(est, lo, hi), p = fmt_p_star(p), events), n = Inf)
 
 pick <- function(def, cause, meth, term, adj) competing %>%
   filter(str_detect(definition, def), .data$cause == !!cause, str_detect(method, meth),
@@ -141,8 +141,8 @@ tv <- bind_rows(
   })
 ) %>% filter(term == "cfs") %>% relocate(outcome, cfs_value, adjusted)
 save_table(tv %>% mutate(across(c(est, lo, hi, c_index), ~ round(.x, 3))), "cox_time_varying")
-message("\nTime-varying CFS (HR per point):")
-print(tv %>% transmute(outcome, cfs_value, adjusted, hr = fmt_ci(est, lo, hi), p = fmt_p(p), events))
+message("\nTime-varying CFS (HR per point) ", SIG_LEGEND, ":")
+print(tv %>% transmute(outcome, cfs_value, adjusted, hr = fmt_ci(est, lo, hi), p = fmt_p_star(p), events))
 
 r <- tv %>% filter(outcome == "OS", adjusted != "none", str_detect(cfs_value, "current"))
 record("tv_os_hr_cfs_adj", r$est, r$lo, r$hi, r$p)

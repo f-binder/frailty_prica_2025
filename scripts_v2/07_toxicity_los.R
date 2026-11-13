@@ -50,8 +50,8 @@ toxicity <- expand_grid(outcome = names(tox_outcomes), predictor = names(all_pre
   pmap_dfr(fit_logistic)
 save_table(toxicity %>% mutate(across(c(or, lo, hi), ~ round(.x, 2))), "toxicity_logistic")
 
-message("\nAssociations with p < 0.10 (all others p >= 0.10):")
-print(toxicity %>% filter(p < 0.10) %>% mutate(across(c(or, lo, hi), ~ round(.x, 2)), p = fmt_p(p)))
+message("\nUnivariable associations with p < 0.10 (all others p >= 0.10) ", SIG_LEGEND, ":")
+print(toxicity %>% filter(p < 0.10) %>% mutate(across(c(or, lo, hi), ~ round(.x, 2)), p = fmt_p_star(p)))
 message("Fits flagged for (quasi-)separation (OR not interpretable): ",
         paste(unique(paste(toxicity$outcome[toxicity$separation], toxicity$predictor[toxicity$separation], sep = " ~ ")), collapse = "; "))
 
@@ -92,9 +92,9 @@ los_models <- bind_rows(
   fit_nb("cfs_score", c(ADJ, "icans_any", "crs_g2"), label = "adjusted + ICANS + CRS>=2 (toxicity as mediator)")
 )
 save_table(los_models %>% mutate(across(c(rr, lo, hi), ~ round(.x, 2))), "los_models")
-message("\nLength of stay, rate ratio per unit (negative binomial):")
+message("\nLength of stay, rate ratio per unit (negative binomial); p < 0.10, plus all CFS models ", SIG_LEGEND, ":")
 print(los_models %>% filter(p < 0.1 | predictor == "CFS (per point)") %>%
-        transmute(predictor, analysis, rr = fmt_ci(rr, lo, hi), p = fmt_p(p), n), n = Inf)
+        transmute(predictor, analysis, rr = fmt_ci(rr, lo, hi), p = fmt_p_star(p), n), n = Inf)
 
 cfs_adj <- los_models %>% filter(predictor == "CFS (per point)", analysis == "adjusted")
 record("los_rr_cfs_adj", cfs_adj$rr, lo = cfs_adj$lo, hi = cfs_adj$hi, p = cfs_adj$p, note = "adjusted for age + log2 LDH")

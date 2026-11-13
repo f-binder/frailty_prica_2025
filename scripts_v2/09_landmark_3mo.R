@@ -188,9 +188,9 @@ lm_models <- bind_rows(
   cox_fit("Surv(pfs_lm, pfs_event) ~ cfs_last + age + log2_ldh", pfs_lm) %>% mutate(outcome = "PFS")
 ) %>% relocate(outcome)
 save_table(lm_models %>% mutate(across(c(est, lo, hi, c_index), ~ round(.x, 3))), "lm3_cox_models")
-message("\nLandmark Cox models (first term = exposure):")
+message("\nLandmark Cox models (first term = exposure) ", SIG_LEGEND, ":")
 print(lm_models %>% group_by(model) %>% slice(1) %>% ungroup() %>%
-        transmute(outcome, model, hr = fmt_ci(est, lo, hi), p = fmt_p(p), n, events, c = round(c_index, 2)), n = Inf, width = Inf)
+        transmute(outcome, model, hr = fmt_ci(est, lo, hi), p = fmt_p_star(p), n, events, c = round(c_index, 2)), n = Inf, width = Inf)
 
 get_lm <- function(model, term) lm_models %>% filter(.data$model == !!model, .data$term == !!term)
 r <- get_lm("Surv(os_lm, os_event) ~ traj", "trajHigher frailty");           record("lm_os_hr_traj", r$est, r$lo, r$hi, r$p)
@@ -214,8 +214,8 @@ lm_cr <- bind_rows(
   mutate(cause = case_when(str_detect(model, "standard") & failcode == 1 ~ "Death after progression",
                            str_detect(model, "standard") ~ "Death without progression",
                            failcode == 1 ~ "RM", TRUE ~ "NRM"), .before = 1)
-message("\nLandmark Fine-Gray models:")
-print(lm_cr %>% transmute(cause, model, shr = fmt_ci(est, lo, hi), p = fmt_p(p), events, converged))
+message("\nLandmark Fine-Gray models ", SIG_LEGEND, ":")
+print(lm_cr %>% transmute(cause, model, shr = fmt_ci(est, lo, hi), p = fmt_p_star(p), events, converged))
 save_table(lm_cr, "lm3_competing_risks")
 
 r <- lm_cr %>% filter(cause == "NRM", model == "traj");              record("lm_nrm_shr_traj", r$est, r$lo, r$hi, r$p)
@@ -238,3 +238,4 @@ save_proc(list(traj_long = al %>% filter(study_id %in% lm$study_id, visit_month 
                curves = group_curves, km = km_os), "lm3_figure_data")
 
 message("09_landmark_3mo.R complete.")
+

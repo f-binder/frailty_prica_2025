@@ -72,6 +72,10 @@ GAIT_SLOW_MPS   <- 0.80                   # slow gait speed threshold, m/s
 # EORTC QLQ-C30, EQ-5D and FACT-Cog were added in protocol version of
 # 27 April 2022; patients enrolled earlier were not asked to complete them.
 QOL_PROTOCOL_START <- as.Date("2022-04-27")
+# Instruments added to the protocol on that date (i.e. NOT collected throughout
+# the study), used for the "protocol-throughout" alternative figures:
+LATER_ADDED_INSTRUMENTS <- c("EORTC QLQ-C30", "EQ-5D")   # display names (feasibility tables)
+LATER_ADDED_VAR_REGEX   <- "^(eortc_|eq5d_)"            # variable-name prefixes
 SEED            <- 20261111
 
 VISITS <- c("baseline" = 0, "1 month" = 1, "3 months" = 3, "6 months" = 6, "12 months" = 12)
@@ -163,6 +167,14 @@ fmt_ci <- function(est, lo, hi, digits = 2) {
 
 fmt_p <- function(p) ifelse(is.na(p), NA_character_,
                      ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))
+
+#' Significance markers for printed screens: "**" p < 0.01, "*" p < 0.05.
+sig_stars <- function(p) case_when(is.na(p) ~ "", p < 0.01 ~ "**", p < 0.05 ~ "*", TRUE ~ "")
+
+#' Formatted p-value with its significance marker, e.g. "0.004 **", "0.032 *", "0.081".
+fmt_p_star <- function(p) str_trim(paste(fmt_p(p), sig_stars(p)))
+
+SIG_LEGEND <- "(* p < 0.05; ** p < 0.01)"
 
 ## ---- Key-results registry ---------------------------------------------------------
 # Every number quoted in the abstract is written to one table

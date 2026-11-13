@@ -5,7 +5,9 @@
 #           a JPEG for abstract submission (<500 KB, black-and-white safe:
 #           groups differ by line type / shape as well as colour).
 #   Figure 1  Feasibility of each instrument (A) and baseline correlation
-#             between frailty and fitness measures (B)
+#             between frailty and fitness measures (B); alternative version
+#             (fig1_..._core_instruments) whose panel A shows only instruments
+#             in the protocol throughout (no EORTC QLQ-C30 / EQ-5D)
 #   Figure 2  Frailty over the first year: CFS (A), gait speed (B), grip (C)
 #   Figure 3  3-month landmark: CFS trajectory groups (A) and overall survival
 #             from the landmark by group (B)
@@ -39,17 +41,24 @@ feas <- completion %>%
   left_join(completion %>% filter(visit == "All visits") %>% select(instrument, overall = pct_done, visits), by = "instrument") %>%
   mutate(instrument = fct_reorder(instrument, overall))
 
-p1a <- ggplot(feas, aes(y = instrument)) +
-  geom_segment(aes(x = min, xend = max, yend = instrument), colour = COL$light, linewidth = 2.2, lineend = "round") +
-  geom_point(aes(x = overall), colour = COL$blue, size = 2.8) +
-  geom_text(aes(x = overall, label = sprintf("%.0f%%", overall)), nudge_y = 0.36, size = 3, colour = COL$ink) +
-  scale_x_continuous(limits = c(60, 101), breaks = seq(60, 100, 10), labels = function(x) paste0(x, "%"),
-                     expand = expansion(mult = c(0, 0.01))) +
-  labs(tag = "A", title = "Completion of each assessment",
-       subtitle = "% of attended visits; point: all visits, bar: range across visits",
-       x = NULL, y = NULL) +
-  theme_pub(10) +
-  theme(panel.grid.major.y = element_blank(), panel.grid.major.x = element_line(colour = "#ecebe8", linewidth = 0.3))
+make_p1a <- function(feas_data, subtitle) {
+  ggplot(feas_data, aes(y = instrument)) +
+    geom_segment(aes(x = min, xend = max, yend = instrument), colour = COL$light, linewidth = 2.2, lineend = "round") +
+    geom_point(aes(x = overall), colour = COL$blue, size = 2.8) +
+    geom_text(aes(x = overall, label = sprintf("%.0f%%", overall)), nudge_y = 0.36, size = 3, colour = COL$ink) +
+    scale_x_continuous(limits = c(60, 101), breaks = seq(60, 100, 10), labels = function(x) paste0(x, "%"),
+                       expand = expansion(mult = c(0, 0.01))) +
+    labs(tag = "A", title = "Completion of each assessment", subtitle = subtitle, x = NULL, y = NULL) +
+    theme_pub(10) +
+    theme(panel.grid.major.y = element_blank(), panel.grid.major.x = element_line(colour = "#ecebe8", linewidth = 0.3))
+}
+
+p1a <- make_p1a(feas, "% of attended visits; point: all visits, bar: range across visits")
+
+# Alternative panel A: only instruments in the protocol throughout the study
+# (EORTC QLQ-C30 and EQ-5D were added on 27 Apr 2022 and are left out).
+feas_core <- feas %>% filter(!instrument %in% LATER_ADDED_INSTRUMENTS) %>% mutate(instrument = droplevels(instrument))
+p1a_core <- make_p1a(feas_core, "Instruments in the protocol throughout; % of attended visits;\npoint: all visits, bar: range across visits")
 
 heat_vars <- c(cfs_score = "CFS", ves13_score = "VES-13", ecog = "ECOG", walk_mpers = "Gait speed",
                grip_average_kg = "Grip strength", minicog_score = "Mini-Cog", phq_total_score = "PHQ-9",
@@ -76,6 +85,11 @@ p1b <- ggplot(heat, aes(x, y, fill = rho)) +
 
 fig1 <- p1a + p1b + plot_layout(widths = c(1, 1.15))
 save_figure(fig1, "fig1_feasibility_correlation", width = 11, height = 4.8)
+
+# Alternative Figure 1 with the protocol-throughout panel A (panel B unchanged:
+# it already contains no later-added instruments).
+fig1_core <- p1a_core + p1b + plot_layout(widths = c(1, 1.15))
+save_figure(fig1_core, "fig1_feasibility_correlation_core_instruments", width = 11, height = 4.8)
 
 ## ---- Figure 2: trajectories over the first year ------------------------------------------
 

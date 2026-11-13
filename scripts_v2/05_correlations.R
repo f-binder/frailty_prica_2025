@@ -13,7 +13,10 @@
 #   G. Tracking: how well does baseline CFS predict later CFS?
 # Inputs  : data/processed/v2/analysis_wide.rds, analysis_long.rds
 # Outputs : output/v2/tables/corr_*.csv, explore_*.csv,
-#           output/v2/figures/explore_baseline_distributions.png
+#           output/v2/figures/explore_baseline_distributions.png, plus the
+#           alternatives restricted to measures collected throughout the study:
+#           explore_baseline_distributions_protocol_throughout.png,
+#           explore_corr_baseline_protocol_throughout.png
 # ==============================================================================
 
 source(here::here("scripts_v2", "00_setup.R"))
@@ -90,6 +93,21 @@ p_dist <- ggplot(bl_long %>% filter(!is.na(value)), aes(value)) +
 ggsave(file.path(paths$figures, "explore_baseline_distributions.png"), p_dist, width = 9, height = 6.5,
        dpi = 200, device = ragg::agg_png, bg = "white")
 
+# Alternative: only measures collected throughout the study period (excludes
+# instruments added to the protocol on 27 Apr 2022, e.g. EORTC QLQ-C30, EQ-5D).
+measures_always <- measures[!str_detect(names(measures), LATER_ADDED_VAR_REGEX)]
+message("Measures collected throughout the study: ", paste(measures_always, collapse = ", "),
+        " | excluded (added later): ", paste(setdiff(measures, measures_always), collapse = ", "))
+
+p_dist_always <- ggplot(bl_long %>% filter(!is.na(value), var %in% names(measures_always)), aes(value)) +
+  geom_histogram(bins = 15, fill = COL$blue, colour = "white", linewidth = 0.3) +
+  facet_wrap(~ measure, scales = "free", ncol = 4) +
+  labs(x = NULL, y = "Patients", title = "Baseline distribution of frailty and fitness measures",
+       subtitle = "Measures collected throughout the study only (later-added questionnaires excluded)") +
+  theme_pub(10)
+ggsave(file.path(paths$figures, "explore_baseline_distributions_protocol_throughout.png"), p_dist_always,
+       width = 9, height = 6.5, dpi = 200, device = ragg::agg_png, bg = "white")
+
 ## ---- Spearman helper with 95% CI ----------------------------------------------------------
 # CI by Fisher z with the Bonett & Wright (2000) variance for Spearman's rho:
 # var(z) = (1 + rho^2 / 2) / (n - 3).
@@ -114,9 +132,9 @@ corr_baseline <- map_dfr(pairs, function(pr) {
 })
 save_table(corr_baseline %>% mutate(across(c(rho, lo, hi), ~ round(.x, 2))), "corr_baseline_pairs")
 
-message("\nBaseline correlations with CFS (Spearman, 95% CI):")
+message("\nBaseline correlations with CFS (Spearman, 95% CI) ", SIG_LEGEND, ":")
 cfs_corr <- corr_baseline %>% filter(var1 == "cfs_score") %>% arrange(desc(abs(rho)))
-print(cfs_corr %>% transmute(measure2, rho = round(rho, 2), ci = fmt_ci(rho, lo, hi), p = fmt_p(p), n))
+print(cfs_corr %>% transmute(measure2, rho = round(rho, 2), ci = fmt_ci(rho, lo, hi), p = fmt_p_star(p), n))
 
 message("\nStrongest baseline correlations overall (|rho| >= 0.4):")
 print(corr_baseline %>% filter(abs(rho) >= 0.4) %>% arrange(desc(abs(rho))) %>%
@@ -135,6 +153,29 @@ ag <- corr_baseline %>% filter((var1 == "age" | var2 == "age"),
                                (var1 %in% c("cfs_score", "walk_mpers", "grip_average_kg") |
                                   var2 %in% c("cfs_score", "walk_mpers", "grip_average_kg")))
 record("rho_baseline_age_physical_max_abs", max(abs(ag$rho)), note = "age vs CFS, gait, grip")
+
+# Correlation heatmap, measures collected throughout the study only
+# (exploratory: all of them, including Karnofsky and HCT-CI, unlike Figure 1B).
+always_levels <- unname(measures_always)
+heat_always <- bind_rows(corr_baseline, corr_baseline %>% rename(var1 = var2, var2 = var1, measure1 = measure2, measure2 = measure1)) %>%
+  filter(var1 %in% names(measures_always), var2 %in% names(measures_always)) %>%
+  mutate(x = factor(measure1, levels = always_levels), y = factor(measure2, levels = rev(always_levels))) %>%
+  filter(as.integer(x) < (length(always_levels) + 1 - as.integer(y)))   # lower triangle
+p_corr_always <- ggplot(heat_always, aes(x, y, fill = rho)) +
+  geom_tile(colour = "white", linewidth = 0.8) +
+  geom_text(aes(label = sprintf("%.2f", rho), colour = abs(rho) > 0.45), size = 2.7, show.legend = FALSE) +
+  scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = COL$ink)) +
+  scale_fill_gradient2(low = COL$dblue, mid = COL$mid, high = COL$red, midpoint = 0, limits = c(-1, 1),
+                       name = "Spearman\nrho") +
+  coord_equal() +
+  labs(title = "Baseline correlation between measures collected throughout the study",
+       subtitle = "Pairwise complete; higher = frailer for CFS, VES-13, ECOG, PHQ-9, CIRS, HCT-CI", x = NULL, y = NULL) +
+  theme_pub(10) +
+  theme(axis.line = element_blank(), axis.ticks = element_blank(), panel.grid.major.y = element_blank(),
+        axis.text.x = element_text(angle = 40, hjust = 1), legend.position = "right",
+        legend.title = element_text(size = 9))
+ggsave(file.path(paths$figures, "explore_corr_baseline_protocol_throughout.png"), p_corr_always,
+       width = 8.5, height = 7, dpi = 200, device = ragg::agg_png, bg = "white")
 
 ## ---- C. Agreement between categorical cut-offs ----------------------------------------------
 
@@ -201,8 +242,8 @@ rmcorr <- function(data, x, y) {
 }
 corr_within <- map_dfr(names(visit_measures), function(v)
   rmcorr(al, "cfs_score", v) %>% mutate(measure = visit_measures[v], .before = 1))
-message("\nWithin-patient correlation of CFS with each measure across visits (rmcorr):")
-print(corr_within %>% mutate(across(c(r_rm, lo, hi), ~ round(.x, 2)), p = fmt_p(p)))
+message("\nWithin-patient correlation of CFS with each measure across visits (rmcorr) ", SIG_LEGEND, ":")
+print(corr_within %>% mutate(across(c(r_rm, lo, hi), ~ round(.x, 2)), p = fmt_p_star(p)))
 save_table(corr_within, "corr_cfs_within_patient")
 
 ## ---- F. Correlation of changes, baseline -> 1 month ------------------------------------------
@@ -215,8 +256,8 @@ corr_change <- map_dfr(names(visit_measures), function(v) {
   spearman_ci(chg$cfs_score_m1 - chg$cfs_score_m0, chg[[paste0(v, "_m1")]] - chg[[paste0(v, "_m0")]]) %>%
     mutate(measure = visit_measures[v], .before = 1)
 })
-message("\nCorrelation of the CHANGE in CFS (baseline -> 1 mo) with the change in each measure:")
-print(corr_change %>% mutate(across(c(rho, lo, hi), ~ round(.x, 2)), p = fmt_p(p)))
+message("\nCorrelation of the CHANGE in CFS (baseline -> 1 mo) with the change in each measure ", SIG_LEGEND, ":")
+print(corr_change %>% mutate(across(c(rho, lo, hi), ~ round(.x, 2)), p = fmt_p_star(p)))
 save_table(corr_change, "corr_change_0_1m")
 
 ## ---- G. Tracking of CFS over time ----------------------------------------------------------------

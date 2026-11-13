@@ -63,7 +63,8 @@ expected <- tribble(
   "deaths_rm",                   "value", 23,    0, "23 RM",
   "deaths_nrm",                  "value", 11,    0, "11 NRM",
   "os_24m_pct",                  "value", 57,    0, "2-year OS 57%",
-  "pfs_24m_pct",                 "value", 44,    0, "PFS 44%",
+  # 44% before the progression-date proxy (02_clean_derive.R); 43% with it
+  "pfs_24m_pct",                 "value", 43,    0, "PFS 43%",
   "cif_rm_24m_pct",              "value", 29,    0, "2-year CIF RM 29%",
   "cif_nrm_24m_pct",             "value", 14,    0, "NRM 14%",
   "los_median",                  "value", 12,    0, "median 12 days",
