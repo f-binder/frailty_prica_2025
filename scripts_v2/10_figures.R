@@ -11,10 +11,13 @@
 #   Figure 2  Frailty over the first year: CFS (A), gait speed (B), grip (C)
 #   Figure 3  3-month landmark: CFS trajectory groups (A) and overall survival
 #             from the landmark by group (B)
+#   Figure 4  CFS over the first year: all available patients (A, subject to
+#             survivor selection) and only patients alive at 12 months (B)
 # Inputs  : output/v2/tables/feasibility_completion.csv, corr_baseline_pairs.csv
-#           data/processed/v2/{analysis_long, trajectory_lsmeans, lm3_figure_data, lm3_data}.rds
+#           data/processed/v2/{analysis_long, trajectory_lsmeans, trajectory_lsmeans_12m_survivors,
+#                               lm3_figure_data, lm3_data}.rds
 # Outputs : output/v2/figures/fig1_feasibility_correlation.*, fig2_trajectories.*,
-#           fig3_landmark_trajectory_survival.*
+#           fig3_landmark_trajectory_survival.*, fig4_cfs_trajectory_all_vs_12m_survivors.*
 # ==============================================================================
 
 source(here::here("scripts_v2", "00_setup.R"))
@@ -23,6 +26,7 @@ section("10 - Publication figures")
 
 al       <- read_proc("analysis_long")
 lsmeans  <- read_proc("trajectory_lsmeans")
+lsmeans_surv <- read_proc("trajectory_lsmeans_12m_survivors")
 fig_lm   <- read_proc("lm3_figure_data")
 lm       <- read_proc("lm3_data")
 completion <- read_csv(file.path(paths$tables, "feasibility_completion.csv"), show_col_types = FALSE)
@@ -97,11 +101,12 @@ save_figure(fig1_core, "fig1_feasibility_correlation_core_instruments", width = 
 # repeated-measures plots; the n assessed is printed under each visit.
 ls_plot <- lsmeans %>% mutate(pos = as.integer(visit))
 
-traj_panel <- function(v, ylab, title, tag, show_patients = FALSE, ylim = NULL) {
-  dat <- ls_plot %>% filter(var == v)
+traj_panel <- function(v, ylab, title, tag, show_patients = FALSE, ylim = NULL,
+                       ls_data = ls_plot, long_data = al) {
+  dat <- ls_data %>% filter(var == v)
   p <- ggplot(dat, aes(pos, lsmean))
   if (show_patients) {
-    indiv <- al %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, pos = as.integer(visit), y = .data[[v]])
+    indiv <- long_data %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, pos = as.integer(visit), y = .data[[v]])
     p <- p + geom_line(data = indiv, aes(pos, y, group = study_id), colour = COL$grey, alpha = 0.35, linewidth = 0.3)
   }
   x_labels <- paste0(VISIT_LABELS, "\nn=", dat$n[match(seq_along(VISIT_LABELS), dat$pos)])
@@ -129,6 +134,8 @@ p_grip <- p_grip + labs(caption = "Later visits include only patients alive and 
   theme(plot.caption = element_text(colour = COL$ink2, size = 8.5))
 fig2 <- p_cfs / (p_gait | p_grip) + plot_layout(heights = c(1.25, 1))
 save_figure(fig2, "fig2_trajectories", width = 8, height = 7.5)
+
+fmt_p_traj <- function(p) ifelse(p < 0.001, "< 0.001", sprintf("= %.3f", p))
 
 ## ---- Figure 3: landmark trajectory groups and survival -----------------------------------
 
@@ -196,5 +203,36 @@ p3risk <- ggplot(risk_df, aes(time, fct_rev(traj), label = n, colour = traj)) +
 fig3 <- (p3a | (p3b / p3risk + plot_layout(heights = c(5, 1)))) +
   plot_layout(guides = "collect") & theme(legend.position = "bottom")
 save_figure(fig3, "fig3_landmark_trajectory_survival", width = 11, height = 5.2)
+
+## ---- Figure 4: CFS, all patients vs patients alive at 12 months ----------------------------
+
+# A: every available assessment (as Figure 2A). Patients who die stop contributing,
+#    so later visits over-represent fitter survivors.
+# B: the same model restricted to patients alive at 12 months (OS >= 12 months),
+#    whether or not they progressed: the trajectory of a 12-month survivor.
+n_surv <- lsmeans_surv$n_patients[1]
+al_surv <- al %>% filter(os_months >= 12)
+
+p4a <- traj_panel("cfs_score", "Clinical Frailty Scale", "All patients with an assessment", "A",
+                  show_patients = TRUE) +
+  scale_y_continuous(breaks = 1:7) +
+  coord_cartesian(ylim = c(1, 7)) +
+  labs(x = NULL,
+       subtitle = sprintf(paste0("Patients stop contributing at death or drop-out, so later visits over-represent\n",
+                                 "fitter survivors (selection bias); model-estimated mean (95%% CI), p %s"),
+                          fmt_p_traj(lsmeans$p_overall[lsmeans$var == "cfs_score"][1])))
+
+p4b <- traj_panel("cfs_score", "Clinical Frailty Scale", sprintf("Patients alive at 12 months (n=%d)", n_surv), "B",
+                  show_patients = TRUE, ls_data = mutate(lsmeans_surv, pos = as.integer(visit)), long_data = al_surv) +
+  scale_y_continuous(breaks = 1:7) +
+  coord_cartesian(ylim = c(1, 7)) +
+  labs(subtitle = sprintf(paste0("Regardless of progression; removes selection by death (missed visits remain);\n",
+                                 "model-estimated mean (95%% CI), p %s"),
+                          fmt_p_traj(lsmeans_surv$p_overall[1])),
+       caption = "Grey: individual patients. Patients censored alive before 12 months are excluded from B.") +
+  theme(plot.caption = element_text(colour = COL$ink2, size = 8.5))
+
+fig4 <- p4a / p4b
+save_figure(fig4, "fig4_cfs_trajectory_all_vs_12m_survivors", width = 7, height = 8.5)
 
 message("10_figures.R complete.")

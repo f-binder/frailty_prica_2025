@@ -12,8 +12,14 @@
 #           out stop contributing, so later visits over-represent fitter
 #           survivors (the model assumes missing-at-random).
 # Inputs  : data/processed/v2/analysis_long.rds
-# Outputs : output/v2/tables/trajectory_lsmeans.csv, trajectory_raw_means.csv
-#           data/processed/v2/trajectory_lsmeans.rds (used by 10_figures.R)
+#           Sensitivity (CFS): the same model restricted to patients known to be
+#           alive at 12 months (OS >= 12 months), i.e. the trajectory of a
+#           "survivor" regardless of progression. Removes selection by death;
+#           missed visits among survivors remain.
+# Outputs : output/v2/tables/trajectory_lsmeans.csv, trajectory_raw_means.csv,
+#           trajectory_cfs_12m_survivors.csv
+#           data/processed/v2/trajectory_lsmeans.rds and
+#           trajectory_lsmeans_12m_survivors.rds (used by 10_figures.R)
 # ==============================================================================
 
 source(here::here("scripts_v2", "00_setup.R"))
@@ -42,8 +48,8 @@ save_table(raw_means %>% mutate(across(c(mean, sd), ~ round(.x, 2))), "trajector
 
 ## ---- Mixed model for repeated measures ---------------------------------------------------
 
-fit_mmrm <- function(v) {
-  dd <- al %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, visit = droplevels(visit), y = .data[[v]])
+fit_mmrm <- function(v, data = al) {
+  dd <- data %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, visit = droplevels(visit), y = .data[[v]])
   fit <- tryCatch(
     nlme::gls(y ~ 0 + visit, data = dd, method = "REML", na.action = na.omit,
               correlation = nlme::corCompSymm(form = ~ 1 | study_id),
@@ -92,5 +98,27 @@ cfs_completers <- al_c %>% group_by(visit) %>%
 message("\nCFS mean by visit among the ", length(completers), " patients assessed at 12 months:")
 print(cfs_completers)
 save_table(cfs_completers, "trajectory_cfs_12m_completers")
+
+# Sensitivity: patients known to be alive at 12 months after infusion (died at
+# or after 12 months, or followed alive for >= 12 months), whatever their
+# progression status. Patients censored alive before 12 months are excluded
+# (status at 12 months unknown).
+survivors_12m <- al %>% distinct(study_id, os_months, os_event) %>% filter(os_months >= 12) %>% pull(study_id)
+n_censored_lt12 <- al %>% distinct(study_id, os_months, os_event) %>% filter(os_months < 12, os_event == 0) %>% nrow()
+al_s <- al %>% filter(study_id %in% survivors_12m)
+cfs_surv <- fit_mmrm("cfs_score", data = al_s) %>%
+  mutate(visit = factor(visit, levels = VISIT_LABELS), cohort = "Alive at 12 months",
+         n_patients = length(survivors_12m))
+message(sprintf("\nCFS, patients alive at 12 months (n = %d; %d censored alive before 12 months excluded) %s:",
+                length(survivors_12m), n_censored_lt12, SIG_LEGEND))
+print(cfs_surv %>% transmute(visit, n, lsmean = fmt_ci(lsmean, lo, hi), p_overall = fmt_p_star(p_overall)))
+save_table(cfs_surv %>% mutate(across(c(lsmean, lo, hi), ~ round(.x, 3))), "trajectory_cfs_12m_survivors")
+save_proc(cfs_surv, "trajectory_lsmeans_12m_survivors")
+record("cfs_traj_12m_survivors_n", length(survivors_12m), note = "patients alive at 12 months (OS >= 12 mo)")
+for (v in VISIT_LABELS) {
+  r <- cfs_surv %>% filter(visit == v)
+  record(paste0("cfs_lsmean_12msurv_", str_replace_all(str_to_lower(v), " ", "")), r$lsmean, lo = r$lo, hi = r$hi)
+}
+record("cfs_traj_12m_survivors_p", cfs_surv$p_overall[1], p = cfs_surv$p_overall[1])
 
 message("06_trajectories.R complete.")

@@ -11,7 +11,8 @@
 scripts <- c(
   "01_import.R", "02_clean_derive.R", "03_descriptives.R", "04_feasibility.R",
   "05_correlations.R", "06_trajectories.R", "07_toxicity_los.R",
-  "08_survival_baseline.R", "09_landmark_3mo.R", "10_figures.R", "11_check_abstract.R"
+  "08_survival_baseline.R", "09_landmark_3mo.R", "10_figures.R", "12_alluvial_cfs.R",
+  "11_check_abstract.R"
 )
 
 # start from a fresh key-results registry so stale numbers cannot survive a re-run

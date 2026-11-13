@@ -104,6 +104,12 @@ stopifnot(
 #      contact. (See data-quality flag "progression ascertainment" below.)
 # Cause of death: reviewed_death_disease supersedes death_disease when filled.
 #   1 = relapse-related (RM), 0 = non-relapse (NRM), 2 / blank = unknown.
+# Progression-date proxy: a relapse-related death implies progression even
+#   when prog_date is blank. For those patients the progression date is
+#   imputed as the end-of-study date if the patient left the study for
+#   progression (eos_reason == 2), otherwise the date of death. Imputed dates
+#   are flagged (prog_date_imputed) and used for PFS, `progressed` and cr_prog.
+#   A reviewed/actual progression date entered in prog_date replaces the proxy.
 # Two competing-risk definitions are kept:
 #   cr_cause : 0 alive, 1 RM, 2 NRM, 3 unknown       (cause-of-death attribution; primary)
 #   cr_prog  : 0 alive, 1 death after progression,
@@ -122,19 +128,37 @@ survival <- survival_raw %>%
     os_event     = as.integer(!is.na(death_date)),
     last_contact = pmax(death_date, last_followup, na.rm = TRUE),
     os_months    = as.numeric(last_contact - date_infusion) / DAYS_PER_MONTH,
-    pfs_date     = pmin(prog_date, death_date, na.rm = TRUE),
-    pfs_event    = as.integer(!is.na(pfs_date)),
-    pfs_months   = as.numeric(coalesce(pfs_date, last_contact) - date_infusion) / DAYS_PER_MONTH,
-    progressed   = as.integer(!is.na(prog_date)),
     cause = case_when(os_event == 0 ~ "Alive",
                       death_disease_final == 1 ~ "RM",
                       death_disease_final == 0 ~ "NRM",
                       TRUE ~ "Unknown"),
     cause = factor(cause, levels = c("Alive", "RM", "NRM", "Unknown")),
     cr_cause = as.integer(cause) - 1L,
-    prog_before_death = os_event == 1 & !is.na(prog_date) & prog_date < death_date,
+    # progression date, with the proxy for relapse-related deaths without one
+    prog_date_imputed = is.na(prog_date) & cause == "RM",
+    prog_date_source  = case_when(!is.na(prog_date) ~ "recorded",
+                                  prog_date_imputed & eos_reason == 2 & !is.na(eos_dov) ~ "proxy: end of study (progression)",
+                                  prog_date_imputed ~ "proxy: date of death",
+                                  TRUE ~ "none"),
+    prog_date_final = case_when(!is.na(prog_date) ~ prog_date,
+                                prog_date_source == "proxy: end of study (progression)" ~ eos_dov,
+                                prog_date_source == "proxy: date of death" ~ death_date),
+    pfs_date     = pmin(prog_date_final, death_date, na.rm = TRUE),
+    pfs_event    = as.integer(!is.na(pfs_date)),
+    pfs_months   = as.numeric(coalesce(pfs_date, last_contact) - date_infusion) / DAYS_PER_MONTH,
+    progressed   = as.integer(!is.na(prog_date_final)),
+    # "<=": a proxy set to the date of death still counts as progression before death
+    prog_before_death = os_event == 1 & !is.na(prog_date_final) & prog_date_final <= death_date,
     cr_prog = case_when(os_event == 0 ~ 0L, prog_before_death ~ 1L, TRUE ~ 2L)
   )
+
+message("Progression dates: ", paste(names(table(survival$prog_date_source)), table(survival$prog_date_source),
+                                     sep = " = ", collapse = "; "))
+if (any(survival$prog_date_imputed)) {
+  message("Imputed progression dates (replace with chart-review dates when available):")
+  print(survival %>% filter(prog_date_imputed) %>%
+          select(study_id, cause, eos_reason, eos_dov, death_date, prog_date_final, prog_date_source))
+}
 
 stopifnot(
   "OS time missing" = !anyNA(survival$os_months),
@@ -154,8 +178,9 @@ message("Cause of death (deaths only): ",
 flags <- bind_rows(
   survival %>% filter(last_followup > DATA_CUT) %>%
     transmute(study_id, flag = "Last follow-up after the data cut", detail = paste("last_followup", last_followup)),
-  survival %>% filter(cause == "RM", is.na(prog_date)) %>%
-    transmute(study_id, flag = "Relapse-related death without progression date", detail = paste("death", death_date)),
+  survival %>% filter(prog_date_imputed) %>%
+    transmute(study_id, flag = "Relapse-related death without progression date (proxy used)",
+              detail = paste0("death ", death_date, "; ", prog_date_source, " = ", prog_date_final)),
   survival %>% filter(cause == "NRM", prog_before_death) %>%
     transmute(study_id, flag = "Non-relapse death after documented progression",
               detail = paste0("prog ", prog_date, ", death ", death_date, ", ", death_reason)),
@@ -231,4 +256,3 @@ save_proc(analysis_wide, "analysis_wide")
 save_proc(analysis_long, "analysis_long")
 
 message("02_clean_derive.R complete.")
-
