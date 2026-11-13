@@ -13,11 +13,15 @@
 #             from the landmark by group (B)
 #   Figure 4  CFS over the first year: all available patients (A, subject to
 #             survivor selection) and only patients alive at 12 months (B)
+#   Figure 6  Baseline distribution of the main frailty instruments, each with
+#             a bar of the proportion completed at baseline (feasibility)
+#             (Figure 5, the alluvial plot, is made by 12_alluvial_cfs.R)
 # Inputs  : output/v2/tables/feasibility_completion.csv, corr_baseline_pairs.csv
 #           data/processed/v2/{analysis_long, trajectory_lsmeans, trajectory_lsmeans_12m_survivors,
 #                               lm3_figure_data, lm3_data}.rds
 # Outputs : output/v2/figures/fig1_feasibility_correlation.*, fig2_trajectories.*,
-#           fig3_landmark_trajectory_survival.*, fig4_cfs_trajectory_all_vs_12m_survivors.*
+#           fig3_landmark_trajectory_survival.*, fig4_cfs_trajectory_all_vs_12m_survivors.*,
+#           fig6_baseline_distribution_completion.*
 # ==============================================================================
 
 source(here::here("scripts_v2", "00_setup.R"))
@@ -27,6 +31,7 @@ section("10 - Publication figures")
 al       <- read_proc("analysis_long")
 lsmeans  <- read_proc("trajectory_lsmeans")
 lsmeans_surv <- read_proc("trajectory_lsmeans_12m_survivors")
+wide     <- read_proc("analysis_wide")
 fig_lm   <- read_proc("lm3_figure_data")
 lm       <- read_proc("lm3_data")
 completion <- read_csv(file.path(paths$tables, "feasibility_completion.csv"), show_col_types = FALSE)
@@ -97,26 +102,27 @@ save_figure(fig1_core, "fig1_feasibility_correlation_core_instruments", width = 
 
 ## ---- Figure 2: trajectories over the first year ------------------------------------------
 
-# Visits are drawn evenly spaced (position 1-5), as is usual for scheduled-visit
-# repeated-measures plots; the n assessed is printed under each visit.
-ls_plot <- lsmeans %>% mutate(pos = as.integer(visit))
+# Visits are placed on a true time scale (months 0, 1, 3, 6, 12 after infusion);
+# the n assessed is printed under each visit.
+visit_pos <- function(visit) unname(VISITS)[as.integer(visit)]   # visit factor -> month
+ls_plot <- lsmeans %>% mutate(pos = visit_pos(visit))
 
 traj_panel <- function(v, ylab, title, tag, show_patients = FALSE, ylim = NULL,
                        ls_data = ls_plot, long_data = al) {
   dat <- ls_data %>% filter(var == v)
   p <- ggplot(dat, aes(pos, lsmean))
   if (show_patients) {
-    indiv <- long_data %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, pos = as.integer(visit), y = .data[[v]])
+    indiv <- long_data %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, pos = visit_pos(visit), y = .data[[v]])
     p <- p + geom_line(data = indiv, aes(pos, y, group = study_id), colour = COL$grey, alpha = 0.35, linewidth = 0.3)
   }
-  x_labels <- paste0(VISIT_LABELS, "\nn=", dat$n[match(seq_along(VISIT_LABELS), dat$pos)])
+  x_labels <- paste0(c("0", unname(VISITS)[-1]), "\n(", dat$n[match(unname(VISITS), dat$pos)], ")")
   p +
-    geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.18, colour = COL$blue, linewidth = 0.6) +
+    geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.35, colour = COL$blue, linewidth = 0.6) +
     geom_line(colour = COL$blue, linewidth = 1) +
     geom_point(colour = COL$blue, size = 2.4) +
-    scale_x_continuous(breaks = seq_along(VISIT_LABELS), labels = x_labels, expand = expansion(add = 0.3)) +
+    scale_x_continuous(breaks = unname(VISITS), labels = x_labels, expand = expansion(add = 0.5)) +
     (if (!is.null(ylim)) coord_cartesian(ylim = ylim)) +
-    labs(tag = tag, title = title, x = "Visit after CAR T infusion", y = ylab) +
+    labs(tag = tag, title = title, x = "Months after CAR T infusion (n assessed)", y = ylab) +
     theme_pub(10)
 }
 
@@ -223,7 +229,7 @@ p4a <- traj_panel("cfs_score", "Clinical Frailty Scale", "All patients with an a
                           fmt_p_traj(lsmeans$p_overall[lsmeans$var == "cfs_score"][1])))
 
 p4b <- traj_panel("cfs_score", "Clinical Frailty Scale", sprintf("Patients alive at 12 months (n=%d)", n_surv), "B",
-                  show_patients = TRUE, ls_data = mutate(lsmeans_surv, pos = as.integer(visit)), long_data = al_surv) +
+                  show_patients = TRUE, ls_data = mutate(lsmeans_surv, pos = visit_pos(visit)), long_data = al_surv) +
   scale_y_continuous(breaks = 1:7) +
   coord_cartesian(ylim = c(1, 7)) +
   labs(subtitle = sprintf(paste0("Regardless of progression; removes selection by death (missed visits remain);\n",
@@ -234,5 +240,62 @@ p4b <- traj_panel("cfs_score", "Clinical Frailty Scale", sprintf("Patients alive
 
 fig4 <- p4a / p4b
 save_figure(fig4, "fig4_cfs_trajectory_all_vs_12m_survivors", width = 7, height = 8.5)
+
+## ---- Figure 6: baseline distribution + completion at baseline -------------------------------
+
+# Completion = instrument scored at the baseline visit, out of all 78 patients
+# (everyone attended baseline). Bar colour runs from mustard (<80% completed)
+# to dark orange-red (>95%) so the less feasible instruments stand out.
+base_inst <- tribble(
+  ~var,              ~label,               ~binwidth, ~discrete, ~breaks,
+  "cfs_score",       "CFS",                1,     TRUE,  1:7,
+  "ves13_score",     "VES-13",             1,     TRUE,  0:7,
+  "walk_mpers",      "Gait speed (m/s)",   0.1,   FALSE, seq(0.5, 1.75, 0.25),
+  "grip_average_kg", "Grip strength (kg)", 5,     FALSE, seq(0, 60, 10),
+  "minicog_score",   "Mini-Cog",           1,     TRUE,  1:5,
+  "phq_total_score", "PHQ-9",              1,     TRUE,  seq(0, 15, 3)
+)
+base_comp <- base_inst %>%
+  mutate(n = nrow(wide), done = map_int(var, ~ sum(!is.na(wide[[.x]]))), pct = 100 * done / n,
+         txt = sprintf("Completed %d/%d (%.0f%%)", done, n, pct))
+print(base_comp %>% select(label, done, n, pct))
+
+COMP_LIMITS <- c(75, 100)
+comp_fill <- scale_fill_gradientn(
+  colours = c("#b8860b", "#b8860b", "#d9622b", "#b5302a", "#b5302a"),
+  values  = scales::rescale(c(75, 80, 90, 95, 100), from = COMP_LIMITS),
+  limits = COMP_LIMITS, oob = scales::squish, guide = "none")
+
+base_panel <- function(i) {
+  r  <- base_inst[i, ]
+  cc <- base_comp[i, ]
+  d  <- tibble(value = wide[[r$var]]) %>% filter(!is.na(value))
+  h <- ggplot(d, aes(value)) +
+    geom_histogram(binwidth = r$binwidth, boundary = if (r$discrete) r$binwidth / 2 else 0,
+                   fill = COL$blue, colour = "white", linewidth = 0.3) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+    scale_x_continuous(breaks = r$breaks[[1]]) +
+    labs(title = r$label, x = NULL, y = "Patients") +
+    theme_pub(9.5) +
+    theme(panel.grid.major.x = element_blank(), plot.margin = margin(4, 6, 0, 6))
+  b <- ggplot(cc, aes(y = 1)) +
+    geom_col(aes(x = 100), fill = COL$light, width = 0.75, orientation = "y") +
+    geom_col(aes(x = pct, fill = pct), width = 0.75, orientation = "y") +
+    geom_text(aes(x = 2.5, label = txt), hjust = 0, size = 2.9, colour = "white", fontface = "bold") +
+    comp_fill +
+    scale_x_continuous(limits = c(0, 100.1), expand = c(0, 0)) +
+    theme_void() +
+    theme(plot.margin = margin(3, 6, 6, 6))
+  h / b + plot_layout(heights = c(7, 1))
+}
+
+fig6 <- wrap_plots(lapply(seq_len(nrow(base_inst)), base_panel), ncol = 3) +
+  plot_annotation(
+    title = "Baseline frailty assessment: distribution of results and completion",
+    subtitle = paste0("Histograms: patients with a result. Bar: proportion of the 78 patients with the test completed at baseline\n",
+                      "(colour from mustard, <80% completed, to dark orange-red, >95%)"),
+    theme = theme(plot.title = element_text(face = "bold", size = 12),
+                  plot.subtitle = element_text(colour = COL$ink2, size = 9.5)))
+save_figure(fig6, "fig6_baseline_distribution_completion", width = 10, height = 6.8)
 
 message("10_figures.R complete.")

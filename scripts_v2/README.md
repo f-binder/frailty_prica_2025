@@ -27,7 +27,7 @@ have been run once), e.g. `Rscript scripts_v2/08_survival_baseline.R`.
 | `07_toxicity_los.R` | Logistic models for CRS ≥2, ICANS, ICU; negative binomial models for length of stay |
 | `08_survival_baseline.R` | Cox (univariable, adjusted for age + log2 LDH), Fine-Gray / cause-specific RM vs NRM, time-varying CFS |
 | `09_landmark_3mo.R` | 3-month landmark: group-based trajectory model (lcmm, PROC TRAJ equivalent), CFS at 3 months, OS/PFS/RM/NRM |
-| `10_figures.R` | Figures 1–4 (PNG 300 dpi, PDF, JPEG < 500 KB for submission) |
+| `10_figures.R` | Figures 1–4 and 6 (PNG 300 dpi, PDF, JPEG < 500 KB for submission) |
 | `12_alluvial_cfs.R` | Figure 5: alluvial plot of CFS state and progression/death (or death) at each visit; transition table (runs before 11) |
 | `11_check_abstract.R` | Compares all abstract numbers with the computed results (`output/v2/tables/abstract_check.csv`) |
 

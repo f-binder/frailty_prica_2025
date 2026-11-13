@@ -23,7 +23,7 @@
 #   - Two endpoints: progression or death (PFS-type, main) and death only
 #     (OS-type; the time-varying Cox model is significant after adjustment for
 #     OS but not for PFS, see 08_survival_baseline.R).
-#   - Visits drawn evenly spaced.
+#   - Visits drawn on a true time scale (months 0, 1, 3, 6, 12).
 #   - Table of transitions: among event-free patients who are frail vs
 #     non-frail at a visit, how many have the event by the next visit (Fisher
 #     exact test, descriptive; patients contribute to several intervals).
@@ -91,19 +91,19 @@ derive_states <- function(endpoint = c("pfs", "os"), locf = FALSE) {
 
 plot_alluvial <- function(st, title, subtitle) {
   cols <- setNames(STATE_COLS, levels(st$state))
-  x_lab <- c("Baseline", paste("Month", VISITS[-1]))
-  ggplot(st, aes(x = pos, stratum = state, alluvium = study_id, fill = state)) +
-    geom_flow(alpha = 0.6, width = 0.32) +
-    geom_stratum(width = 0.32, alpha = 0.95, colour = "white", linewidth = 0.4) +
+  x_lab <- c("0", VISITS[-1])
+  ggplot(st, aes(x = visit_month, stratum = state, alluvium = study_id, fill = state)) +
+    geom_flow(alpha = 0.6, width = 0.42) +
+    geom_stratum(width = 0.42, alpha = 0.95, colour = "white", linewidth = 0.4) +
     geom_text(stat = "stratum", size = 2.9, lineheight = 0.9,
               aes(label = ifelse(after_stat(count) >= 3,
                                  paste0(after_stat(count), "\n(", percent(after_stat(prop), accuracy = 1), ")"), ""),
                   colour = after_stat(stratum) %in% levels(st$state)[c(4, 5)])) +
     scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = COL$ink), guide = "none") +
     scale_fill_manual(values = cols, name = NULL, drop = FALSE) +
-    scale_x_continuous(breaks = seq_along(VISITS), labels = x_lab, expand = expansion(add = 0.25)) +
+    scale_x_continuous(breaks = unname(VISITS), labels = x_lab, expand = expansion(add = 0.3)) +
     scale_y_continuous(breaks = seq(0, 80, 20), expand = expansion(mult = c(0.01, 0.02))) +
-    labs(title = title, subtitle = subtitle, x = NULL, y = "Patients") +
+    labs(title = title, subtitle = subtitle, x = "Months after CAR T infusion", y = "Patients") +
     theme_pub(10) +
     theme(legend.position = "top", panel.grid.major.y = element_blank(), axis.line.x = element_blank(),
           axis.ticks.x = element_blank(), axis.text.x = element_text(size = 10, colour = COL$ink)) +
