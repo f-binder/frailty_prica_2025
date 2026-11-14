@@ -7,6 +7,8 @@
 #               eligibility for quality-of-life questionnaires
 #             - survival: OS, PFS, cause of death (reviewed column supersedes
 #               the original), competing-risk codes under two definitions
+#             - grip strength relative to age/sex norms (grip_z, grip_pctpred;
+#               norms from GRIP_NORM_FILE, see 00_setup.R)
 #             - data-quality flags written to a table for the study team
 #           and build the analysis datasets.
 # Inputs  : data/processed/v2/{baseline_raw, rm_raw, survival_raw}.rds
@@ -96,6 +98,38 @@ stopifnot(
   "CFS outside 1-9" = all(between(rm$cfs_score, 1, 9), na.rm = TRUE),
   "Mini-Cog outside 0-5" = all(between(rm$minicog_score, 0, 5), na.rm = TRUE)
 )
+
+## ---- Grip strength relative to age- and sex-specific norms -----------------------------
+
+# Normative table: one row per age band x hand; kg columns 7-10 = male mean, male
+# SD, female mean, female SD. Right and left hand are averaged per band and sex
+# (as in process_grip_strength_normative_data_20251128.R).
+grip_norms <- readxl::read_xlsx(GRIP_NORM_FILE, col_names = FALSE, skip = 2, col_types = "text",
+                                .name_repair = ~ paste0("c", seq_along(.x))) %>%
+  transmute(age_band = c1, hand = c2, m_mean = as.numeric(c7), m_sd = as.numeric(c8),
+            f_mean = as.numeric(c9), f_sd = as.numeric(c10)) %>%
+  fill(age_band) %>%
+  group_by(age_band) %>%
+  summarise(across(m_mean:f_sd, mean), .groups = "drop") %>%
+  mutate(age_lo = as.numeric(str_extract(age_band, "^\\d+")),
+         age_hi = coalesce(as.numeric(str_extract(age_band, "(?<=-)\\d+$")), Inf)) %>%
+  pivot_longer(m_mean:f_sd, names_to = c("sex", ".value"), names_pattern = "(m|f)_(mean|sd)") %>%
+  transmute(sex = if_else(sex == "m", "Male", "Female"), age_band, age_lo, age_hi,
+            grip_norm_mean = mean, grip_norm_sd = sd)
+stopifnot("grip norms incomplete" = !anyNA(grip_norms))
+
+# age at each assessment = age at infusion + time since infusion (baseline visits
+# before infusion keep the age at infusion)
+rm <- rm %>%
+  left_join(baseline %>% transmute(study_id, .sex = as.character(sex), .age = age), by = "study_id") %>%
+  mutate(.age_visit = floor(.age + pmax(actual_month, 0) / 12)) %>%
+  left_join(grip_norms, by = join_by(.sex == sex, between(.age_visit, age_lo, age_hi))) %>%
+  mutate(grip_z       = (grip_average_kg - grip_norm_mean) / grip_norm_sd,
+         grip_pctpred = 100 * grip_average_kg / grip_norm_mean) %>%
+  select(-c(.sex, .age, .age_visit, age_lo, age_hi))
+stopifnot("grip norm join duplicated visits" = !anyDuplicated(rm[, c("study_id", "visit_month")]))
+message(sprintf("Grip strength vs norms: %d of %d grip values matched (unmatched = sex not Male/Female)",
+                sum(!is.na(rm$grip_z)), sum(!is.na(rm$grip_average_kg))))
 
 ## ---- Survival outcomes and cause of death -------------------------------------------
 # OS: infusion to death; censored at last contact (latest of death or last
@@ -196,6 +230,9 @@ flags <- bind_rows(
   rm %>% filter(visit_month == 0, actual_month > 0) %>%
     transmute(study_id, flag = "Baseline assessment after infusion",
               detail = sprintf("%.0f days after infusion", actual_month * DAYS_PER_MONTH)),
+  rm %>% filter(!is.na(grip_average_kg), is.na(grip_z)) %>%
+    transmute(study_id, flag = "Grip strength without normative value (sex not Male/Female)",
+              detail = paste(timepoint, grip_average_kg, "kg")),
   rm %>% filter(visit_month > 0, abs(actual_month - visit_month) > 1.5) %>%
     transmute(study_id, flag = "Visit >1.5 months from its nominal time",
               detail = sprintf("%s visit at %.1f months", timepoint, actual_month))
@@ -207,7 +244,7 @@ save_table(flags, "data_quality_flags")
 
 ## ---- Analysis datasets ------------------------------------------------------------------
 
-frailty_vars <- c("cfs_score", "grip_average_kg", "walk_time", "walk_mpers", "minicog_score",
+frailty_vars <- c("cfs_score", "grip_average_kg", "grip_z", "grip_pctpred", "walk_time", "walk_mpers", "minicog_score",
                   "phq_total_score", "phq_10", "esas_wellbeing", "eortc_globalhealth",
                   "eortc_physicalfunction", "eq5d_vas")
 

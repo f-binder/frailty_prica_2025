@@ -69,6 +69,18 @@ DAYS_PER_MONTH  <- 30.4375                # average month length
 LANDMARK_MONTHS <- 3                      # landmark for post-infusion frailty
 LOS_PROLONGED   <- 14                     # "prolonged" index admission, days
 GAIT_SLOW_MPS   <- 0.80                   # slow gait speed threshold, m/s
+# Grip strength is analysed relative to age- and sex-specific normative values
+# (utils/Normative_grip_strength_data.xlsx; adult values as in Mathiowetz et al.,
+# Arch Phys Med Rehabil 1985). Right- and left-hand norms are averaged because
+# the study records the average grip (grip_average_kg). Derived in 02:
+#   grip_z       = (measured - normative mean) / normative SD  (age at visit, sex)
+#   grip_pctpred = 100 * measured / normative mean
+# GRIP_VAR is the grip variable used in every correlation / model / trajectory;
+# set it to "grip_average_kg" to reproduce the raw-kg analyses.
+GRIP_NORM_FILE  <- here("utils", "Normative_grip_strength_data.xlsx")
+GRIP_VAR        <- "grip_z"
+GRIP_LABEL      <- c(grip_z = "Grip strength (z vs norms)", grip_pctpred = "Grip strength (% predicted)",
+                     grip_average_kg = "Grip strength (kg)")[[GRIP_VAR]]
 # EORTC QLQ-C30, EQ-5D and FACT-Cog were added in protocol version of
 # 27 April 2022; patients enrolled earlier were not asked to complete them.
 QOL_PROTOCOL_START <- as.Date("2022-04-27")
@@ -144,6 +156,44 @@ save_figure <- function(plot, name, width = 7, height = 5) {
   message(sprintf("Saved %s (.png/.pdf/.jpg; jpg = %.0f KB%s)", name, kb,
                   if (kb > 500) " - OVER the 500 KB submission limit" else ""))
   invisible(png_file)
+}
+
+## ---- Shared plot builders (used by 10_figures.R and 12_alluvial_cfs.R) ---------
+
+#' Visit factor (Baseline, 1 mo, ...) -> months after infusion (0, 1, 3, 6, 12).
+visit_pos <- function(visit) unname(VISITS)[as.integer(visit)]
+
+#' Format an overall p-value for a plot subtitle.
+fmt_p_traj <- function(p) ifelse(p < 0.001, "< 0.001", sprintf("= %.3f", p))
+
+#' One measure over the first year on a true month scale: model-estimated mean
+#' (95% CI) per visit, optionally individual patient lines underneath.
+#'   ls_data   : LS-means (columns var, visit, n, lsmean, lo, hi) with pos = month
+#'   long_data : long data with study_id, visit and the measure (patient lines)
+#'   x_limits  : fixed x range (no expansion), to align with other panels
+#' Returns a ggplot; nothing is saved.
+traj_panel <- function(v, ylab, title, tag = NULL, ls_data, long_data = NULL, show_patients = FALSE,
+                       ylim = NULL, x_limits = NULL, line_col = COL$blue) {
+  dat <- ls_data %>% filter(var == v)
+  p <- ggplot(dat, aes(pos, lsmean))
+  if (show_patients) {
+    indiv <- long_data %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, pos = visit_pos(visit), y = .data[[v]])
+    p <- p + geom_line(data = indiv, aes(pos, y, group = study_id), colour = COL$grey, alpha = 0.35, linewidth = 0.3)
+  }
+  x_labels <- paste0(c("0", unname(VISITS)[-1]), "\n(", dat$n[match(unname(VISITS), dat$pos)], ")")
+  x_scale <- if (is.null(x_limits)) {
+    scale_x_continuous(breaks = unname(VISITS), labels = x_labels, expand = expansion(add = 0.5))
+  } else {
+    scale_x_continuous(breaks = unname(VISITS), labels = x_labels, limits = x_limits, expand = c(0, 0))
+  }
+  p +
+    geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.35, colour = line_col, linewidth = 0.6) +
+    geom_line(colour = line_col, linewidth = 1) +
+    geom_point(colour = line_col, size = 2.4) +
+    x_scale +
+    (if (!is.null(ylim)) coord_cartesian(ylim = ylim)) +
+    labs(tag = tag, title = title, x = "Months after CAR T infusion (n assessed)", y = ylab) +
+    theme_pub(10)
 }
 
 ## ---- Small helpers --------------------------------------------------------------

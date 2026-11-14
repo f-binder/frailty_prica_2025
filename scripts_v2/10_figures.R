@@ -16,6 +16,12 @@
 #   Figure 6  Baseline distribution of the main frailty instruments, each with
 #             a bar of the proportion completed at baseline (feasibility)
 #             (Figure 5, the alluvial plot, is made by 12_alluvial_cfs.R)
+# Structure: every figure is built as an object first (fig1, fig2, ...); all
+#           files are written in the final "Save" section. To work
+#           interactively, set SAVE_FIGURES <- FALSE, run the script, then
+#           print / adjust the objects (e.g. fig2 + plot_layout(heights = ...))
+#           and save with save_figure(<object>, "<name>", width, height).
+#           Trajectory panels use traj_panel() from 00_setup.R.
 # Inputs  : output/v2/tables/feasibility_completion.csv, corr_baseline_pairs.csv
 #           data/processed/v2/{analysis_long, trajectory_lsmeans, trajectory_lsmeans_12m_survivors,
 #                               lm3_figure_data, lm3_data}.rds
@@ -26,6 +32,7 @@
 
 source(here::here("scripts_v2", "00_setup.R"))
 SCRIPT_NAME <- "10_figures.R"
+if (!exists("SAVE_FIGURES")) SAVE_FIGURES <- TRUE   # set FALSE before sourcing to only build the plots
 section("10 - Publication figures")
 
 al       <- read_proc("analysis_long")
@@ -70,7 +77,7 @@ feas_core <- feas %>% filter(!instrument %in% LATER_ADDED_INSTRUMENTS) %>% mutat
 p1a_core <- make_p1a(feas_core, "Instruments in the protocol throughout; % of attended visits;\npoint: all visits, bar: range across visits")
 
 heat_vars <- c(cfs_score = "CFS", ves13_score = "VES-13", ecog = "ECOG", walk_mpers = "Gait speed",
-               grip_average_kg = "Grip strength", minicog_score = "Mini-Cog", phq_total_score = "PHQ-9",
+               setNames("Grip strength", GRIP_VAR), minicog_score = "Mini-Cog", phq_total_score = "PHQ-9",
                cirs_total = "CIRS", age = "Age")
 heat <- bind_rows(corr_pairs, corr_pairs %>% rename(var1 = var2, var2 = var1)) %>%
   filter(var1 %in% names(heat_vars), var2 %in% names(heat_vars)) %>%
@@ -93,55 +100,30 @@ p1b <- ggplot(heat, aes(x, y, fill = rho)) +
         legend.title = element_text(size = 9), legend.key.height = unit(1.2, "lines"), legend.key.width = unit(0.6, "lines"))
 
 fig1 <- p1a + p1b + plot_layout(widths = c(1, 1.15))
-save_figure(fig1, "fig1_feasibility_correlation", width = 11, height = 4.8)
 
 # Alternative Figure 1 with the protocol-throughout panel A (panel B unchanged:
 # it already contains no later-added instruments).
 fig1_core <- p1a_core + p1b + plot_layout(widths = c(1, 1.15))
-save_figure(fig1_core, "fig1_feasibility_correlation_core_instruments", width = 11, height = 4.8)
 
 ## ---- Figure 2: trajectories over the first year ------------------------------------------
 
 # Visits are placed on a true time scale (months 0, 1, 3, 6, 12 after infusion);
-# the n assessed is printed under each visit.
-visit_pos <- function(visit) unname(VISITS)[as.integer(visit)]   # visit factor -> month
+# the n assessed is printed under each visit (traj_panel() is in 00_setup.R).
 ls_plot <- lsmeans %>% mutate(pos = visit_pos(visit))
 
-traj_panel <- function(v, ylab, title, tag, show_patients = FALSE, ylim = NULL,
-                       ls_data = ls_plot, long_data = al) {
-  dat <- ls_data %>% filter(var == v)
-  p <- ggplot(dat, aes(pos, lsmean))
-  if (show_patients) {
-    indiv <- long_data %>% filter(!is.na(.data[[v]])) %>% transmute(study_id, pos = visit_pos(visit), y = .data[[v]])
-    p <- p + geom_line(data = indiv, aes(pos, y, group = study_id), colour = COL$grey, alpha = 0.35, linewidth = 0.3)
-  }
-  x_labels <- paste0(c("0", unname(VISITS)[-1]), "\n(", dat$n[match(unname(VISITS), dat$pos)], ")")
-  p +
-    geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.35, colour = COL$blue, linewidth = 0.6) +
-    geom_line(colour = COL$blue, linewidth = 1) +
-    geom_point(colour = COL$blue, size = 2.4) +
-    scale_x_continuous(breaks = unname(VISITS), labels = x_labels, expand = expansion(add = 0.5)) +
-    (if (!is.null(ylim)) coord_cartesian(ylim = ylim)) +
-    labs(tag = tag, title = title, x = "Months after CAR T infusion (n assessed)", y = ylab) +
-    theme_pub(10)
-}
-
 p_cfs <- traj_panel("cfs_score", "Clinical Frailty Scale", "CFS: transient worsening at 1 month", "A",
-                    show_patients = TRUE) +
+                    ls_data = ls_plot, long_data = al, show_patients = TRUE) +
   scale_y_continuous(breaks = 1:7) +
   coord_cartesian(ylim = c(1, 7)) +
   labs(subtitle = sprintf("Grey: individual patients; blue: model-estimated mean (95%% CI); p %s",
                           ifelse(lsmeans$p_overall[lsmeans$var == "cfs_score"][1] < 0.001, "< 0.001",
                                  sprintf("= %.3f", lsmeans$p_overall[lsmeans$var == "cfs_score"][1]))))
-p_gait <- traj_panel("walk_mpers", "Gait speed (m/s)", "Gait speed", "B")
-p_grip <- traj_panel("grip_average_kg", "Grip strength (kg)", "Grip strength", "C")
+p_gait <- traj_panel("walk_mpers", "Gait speed (m/s)", "Gait speed", "B", ls_data = ls_plot)
+p_grip <- traj_panel(GRIP_VAR, GRIP_LABEL, "Grip strength", "C", ls_data = ls_plot)
 
 p_grip <- p_grip + labs(caption = "Later visits include only patients alive and assessed (survivor selection).") +
   theme(plot.caption = element_text(colour = COL$ink2, size = 8.5))
 fig2 <- p_cfs / (p_gait | p_grip) + plot_layout(heights = c(1.25, 1))
-save_figure(fig2, "fig2_trajectories", width = 8, height = 7.5)
-
-fmt_p_traj <- function(p) ifelse(p < 0.001, "< 0.001", sprintf("= %.3f", p))
 
 ## ---- Figure 3: landmark trajectory groups and survival -----------------------------------
 
@@ -208,7 +190,6 @@ p3risk <- ggplot(risk_df, aes(time, fct_rev(traj), label = n, colour = traj)) +
 
 fig3 <- (p3a | (p3b / p3risk + plot_layout(heights = c(5, 1)))) +
   plot_layout(guides = "collect") & theme(legend.position = "bottom")
-save_figure(fig3, "fig3_landmark_trajectory_survival", width = 11, height = 5.2)
 
 ## ---- Figure 4: CFS, all patients vs patients alive at 12 months ----------------------------
 
@@ -220,7 +201,7 @@ n_surv <- lsmeans_surv$n_patients[1]
 al_surv <- al %>% filter(os_months >= 12)
 
 p4a <- traj_panel("cfs_score", "Clinical Frailty Scale", "All patients with an assessment", "A",
-                  show_patients = TRUE) +
+                  ls_data = ls_plot, long_data = al, show_patients = TRUE) +
   scale_y_continuous(breaks = 1:7) +
   coord_cartesian(ylim = c(1, 7)) +
   labs(x = NULL,
@@ -239,7 +220,6 @@ p4b <- traj_panel("cfs_score", "Clinical Frailty Scale", sprintf("Patients alive
   theme(plot.caption = element_text(colour = COL$ink2, size = 8.5))
 
 fig4 <- p4a / p4b
-save_figure(fig4, "fig4_cfs_trajectory_all_vs_12m_survivors", width = 7, height = 8.5)
 
 ## ---- Figure 6: baseline distribution + completion at baseline -------------------------------
 
@@ -251,10 +231,20 @@ base_inst <- tribble(
   "cfs_score",       "CFS",                1,     TRUE,  1:7,
   "ves13_score",     "VES-13",             1,     TRUE,  0:7,
   "walk_mpers",      "Gait speed (m/s)",   0.1,   FALSE, seq(0.5, 1.75, 0.25),
-  "grip_average_kg", "Grip strength (kg)", 5,     FALSE, seq(0, 60, 10),
+  "grip",            "Grip strength",      NA,    FALSE, NULL,   # filled from GRIP_VAR below
   "minicog_score",   "Mini-Cog",           1,     TRUE,  1:5,
   "phq_total_score", "PHQ-9",              1,     TRUE,  seq(0, 15, 3)
 )
+grip_hist <- list(
+  grip_z          = list(label = "Grip strength (z vs age/sex norms)", binwidth = 0.5, breaks = seq(-5, 3, 1)),
+  grip_pctpred    = list(label = "Grip strength (% predicted)",        binwidth = 10,  breaks = seq(0, 160, 40)),
+  grip_average_kg = list(label = "Grip strength (kg)",                 binwidth = 5,   breaks = seq(0, 60, 10))
+)[[GRIP_VAR]]
+i_grip <- which(base_inst$var == "grip")
+base_inst$var[i_grip] <- GRIP_VAR
+base_inst$label[i_grip] <- grip_hist$label
+base_inst$binwidth[i_grip] <- grip_hist$binwidth
+base_inst$breaks[[i_grip]] <- grip_hist$breaks
 base_comp <- base_inst %>%
   mutate(n = nrow(wide), done = map_int(var, ~ sum(!is.na(wide[[.x]]))), pct = 100 * done / n,
          txt = sprintf("Completed %d/%d (%.0f%%)", done, n, pct))
@@ -296,6 +286,16 @@ fig6 <- wrap_plots(lapply(seq_len(nrow(base_inst)), base_panel), ncol = 3) +
                       "(colour from mustard, <80% completed, to dark orange-red, >95%)"),
     theme = theme(plot.title = element_text(face = "bold", size = 12),
                   plot.subtitle = element_text(colour = COL$ink2, size = 9.5)))
-save_figure(fig6, "fig6_baseline_distribution_completion", width = 10, height = 6.8)
+
+## ---- Save ---------------------------------------------------------------------------------
+
+if (SAVE_FIGURES) {
+  save_figure(fig1,      "fig1_feasibility_correlation",                  width = 11, height = 4.8)
+  save_figure(fig1_core, "fig1_feasibility_correlation_core_instruments", width = 11, height = 4.8)
+  save_figure(fig2,      "fig2_trajectories",                             width = 8,  height = 7.5)
+  save_figure(fig3,      "fig3_landmark_trajectory_survival",             width = 11, height = 5.2)
+  save_figure(fig4,      "fig4_cfs_trajectory_all_vs_12m_survivors",      width = 7,  height = 8.5)
+  save_figure(fig6,      "fig6_baseline_distribution_completion",         width = 10, height = 6.8)
+}
 
 message("10_figures.R complete.")

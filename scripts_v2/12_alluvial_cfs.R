@@ -24,17 +24,28 @@
 #     (OS-type; the time-varying Cox model is significant after adjustment for
 #     OS but not for PFS, see 08_survival_baseline.R).
 #   - Visits drawn on a true time scale (months 0, 1, 3, 6, 12).
+#   - Colours stay distinguishable in grayscale (CIE lightness 93 / 73 / 86 /
+#     51 / 25 for censored / non-frail / no CFS / frail / event).
+#   - Figure 7 (abstract figure): CFS over the first year (A, one third of the
+#     height) above the progression/death alluvial with LOCF (B), on the same
+#     month axis.
+# Structure: states -> tables -> plot objects -> "Save" section at the end.
+#           To work interactively, set SAVE_FIGURES <- FALSE, run the script,
+#           then adjust the objects (e.g. fig7_top / fig7_bottom +
+#           plot_layout(heights = c(1, 2))) and save with save_figure().
 #   - Table of transitions: among event-free patients who are frail vs
 #     non-frail at a visit, how many have the event by the next visit (Fisher
 #     exact test, descriptive; patients contribute to several intervals).
 # Inputs  : data/processed/v2/analysis_wide.rds, analysis_long.rds
-# Outputs : output/v2/figures/fig5_alluvial_cfs_{pfs,os}[_locf].*
+# Outputs : output/v2/figures/fig5_alluvial_cfs_{pfs,os}[_locf].*,
+#           fig7_abstract_cfs_trajectory_alluvial.*
 #           output/v2/tables/alluvial_states_{pfs,os}.csv,
 #           alluvial_transitions_{pfs,os}.csv
 # ==============================================================================
 
 source(here::here("scripts_v2", "00_setup.R"))
 SCRIPT_NAME <- "12_alluvial_cfs.R"
+if (!exists("SAVE_FIGURES")) SAVE_FIGURES <- TRUE   # set FALSE before sourcing to only build the plots
 section("12 - Alluvial plot: CFS state and progression / death over the first year")
 
 if (!requireNamespace("ggalluvial", quietly = TRUE)) stop("Please install ggalluvial: install.packages('ggalluvial')")
@@ -42,10 +53,12 @@ library(ggalluvial)
 
 w  <- read_proc("analysis_wide")
 al <- read_proc("analysis_long")
+lsmeans <- read_proc("trajectory_lsmeans")   # from 06_trajectories.R (for Figure 7A)
 
 FRAIL_CUT <- 4   # CFS >= 4 = frail (same as cfs_cat ">3")
 STATE_LEVELS <- c("Censored / off study", "Non-frail (CFS 1-3)", "No CFS", "Frail (CFS 4+)", "EVENT")
-STATE_COLS <- c("#d0d0d0", "#2a9d8f", "#e9c46a", "#e07a5f", "#6b6b6b")
+# grayscale-safe palette close to the original teal / mustard / coral / grey
+STATE_COLS <- c("#ececec", "#6cc3b6", "#f1d58a", "#c4573d", "#3b3b3b")
 
 ## ---- Patient x visit states -------------------------------------------------------------
 
@@ -89,7 +102,9 @@ derive_states <- function(endpoint = c("pfs", "os"), locf = FALSE) {
 
 ## ---- Plot ---------------------------------------------------------------------------------
 
-plot_alluvial <- function(st, title, subtitle) {
+# Returns a ggplot (nothing is saved). label_min: smallest group that gets a
+# count label; x_limits: fixed x range (no expansion) to align with other panels.
+plot_alluvial <- function(st, title, subtitle, label_min = 3, x_limits = NULL) {
   cols <- setNames(STATE_COLS, levels(st$state))
   x_lab <- c("0", VISITS[-1])
   ggplot(st, aes(x = visit_month, stratum = state, alluvium = study_id, fill = state)) +
@@ -100,11 +115,12 @@ plot_alluvial <- function(st, title, subtitle) {
     # their colour when the plot is combined with others)
     lapply(list(list(dark = TRUE, col = "white"), list(dark = FALSE, col = COL$ink)), function(o)
       geom_text(stat = "stratum", size = 2.9, lineheight = 0.9, colour = o$col,
-                aes(label = ifelse(after_stat(count) >= 3 &
+                aes(label = ifelse(after_stat(count) >= label_min &
                                      (after_stat(stratum) %in% levels(st$state)[c(4, 5)]) == o$dark,
                                    paste0(after_stat(count), "\n(", percent(after_stat(prop), accuracy = 1), ")"), "")))) +
     scale_fill_manual(values = cols, name = NULL, drop = FALSE) +
-    scale_x_continuous(breaks = unname(VISITS), labels = x_lab, expand = expansion(add = 0.3)) +
+    (if (is.null(x_limits)) scale_x_continuous(breaks = unname(VISITS), labels = x_lab, expand = expansion(add = 0.3))
+     else scale_x_continuous(breaks = unname(VISITS), labels = x_lab, limits = x_limits, expand = c(0, 0))) +
     scale_y_continuous(breaks = seq(0, 80, 20), expand = expansion(mult = c(0.01, 0.02))) +
     labs(title = title, subtitle = subtitle, x = "Months after CAR T infusion", y = "Patients") +
     theme_pub(10) +
@@ -146,48 +162,89 @@ print_transitions <- function(tr, ev_label) {
                          ratio = ifelse(is.finite(rr), sprintf("%.1f", rr), "-"), p = fmt_p_star(p)), n = Inf)
 }
 
-## ---- Run: both endpoints, with and without LOCF ---------------------------------------------
+## ---- States: both endpoints, with and without LOCF -----------------------------------------
+
+states <- list(
+  pfs      = derive_states("pfs", locf = FALSE),
+  pfs_locf = derive_states("pfs", locf = TRUE),
+  os       = derive_states("os",  locf = FALSE),
+  os_locf  = derive_states("os",  locf = TRUE)
+)
+
+## ---- Tables (no imputation) -----------------------------------------------------------------
 
 for (ep in c("pfs", "os")) {
-  ev_label <- if (ep == "pfs") "Progression / death" else "Death"
-  for (locf in c(FALSE, TRUE)) {
-    st <- derive_states(ep, locf)
-    suffix <- paste0(ep, if (locf) "_locf" else "")
-    sub <- paste0(
-      "Event-free patients by Clinical Frailty Scale at each visit; ",
-      str_to_lower(ev_label), " is absorbing (dated on or before the visit)",
-      if (locf) "\nMissed visits between two attended visits carry the previous CFS forward" else
-        "\n\"No CFS\": still in the study but CFS not available at that visit (no imputation)")
-    p <- plot_alluvial(st, sprintf("CFS state and %s over the first year after CAR T (n=%d)",
-                                   str_to_lower(ev_label), n_distinct(st$study_id)), sub)
-    save_figure(p, paste0("fig5_alluvial_cfs_", suffix), width = 10, height = 6)
+  st <- states[[ep]]
+  ev_label <- levels(st$state)[5]
+  counts <- st %>% count(visit, state) %>% group_by(visit) %>% mutate(pct = pct(n / sum(n), 0)) %>% ungroup()
+  save_table(counts, paste0("alluvial_states_", ep))
+  message(sprintf("\n%s - states by visit:", ev_label))
+  print(counts %>% transmute(visit, state, cell = sprintf("%d (%s%%)", n, pct)) %>%
+          pivot_wider(names_from = visit, values_from = cell, values_fill = "0"), width = Inf)
 
-    if (!locf) {
-      counts <- st %>% count(visit, state) %>% group_by(visit) %>% mutate(pct = pct(n / sum(n), 0)) %>% ungroup()
-      save_table(counts, paste0("alluvial_states_", ep))
-      message(sprintf("\n%s - states by visit:", ev_label))
-      print(counts %>% transmute(visit, state, cell = sprintf("%d (%s%%)", n, pct)) %>%
-              pivot_wider(names_from = visit, values_from = cell, values_fill = "0"), width = Inf)
+  tr <- transitions(st)
+  save_table(tr %>% mutate(rr = round(rr, 2)), paste0("alluvial_transitions_", ep))
+  print_transitions(tr, ev_label)
+  pooled <- tr %>% filter(str_detect(interval, "^All"))
+  record(paste0("alluvial_", ep, "_next_event_pct_frail"), pooled$frail_pct,
+         note = sprintf("%d/%d patient-intervals", pooled$frail_events, pooled$frail_n))
+  record(paste0("alluvial_", ep, "_next_event_pct_nonfrail"), pooled$nonfrail_pct,
+         note = sprintf("%d/%d patient-intervals", pooled$nonfrail_events, pooled$nonfrail_n))
 
-      tr <- transitions(st)
-      save_table(tr %>% mutate(rr = round(rr, 2)), paste0("alluvial_transitions_", ep))
-      print_transitions(tr, ev_label)
-      pooled <- tr %>% filter(str_detect(interval, "^All"))
-      record(paste0("alluvial_", ep, "_next_event_pct_frail"), pooled$frail_pct,
-             note = sprintf("%d/%d patient-intervals", pooled$frail_events, pooled$frail_n))
-      record(paste0("alluvial_", ep, "_next_event_pct_nonfrail"), pooled$nonfrail_pct,
-             note = sprintf("%d/%d patient-intervals", pooled$nonfrail_events, pooled$nonfrail_n))
+  # where do the first-year events come from? state at the last visit before the event
+  src <- st %>% arrange(study_id, pos) %>% group_by(study_id) %>%
+    mutate(prev_state = lag(state)) %>%
+    filter(state == ev_label, lag(state) != ev_label) %>% ungroup() %>%
+    count(prev_state) %>% mutate(pct = pct(n / sum(n), 0))
+  message(sprintf("%s within 12 months (n=%d): state at the preceding visit", ev_label, sum(src$n)))
+  print(src)
+  save_table(src, paste0("alluvial_event_source_", ep))
+}
 
-      # where do the first-year events come from? state at the last visit before the event
-      src <- st %>% arrange(study_id, pos) %>% group_by(study_id) %>%
-        mutate(prev_state = lag(state)) %>%
-        filter(state == ev_label, lag(state) != ev_label) %>% ungroup() %>%
-        count(prev_state) %>% mutate(pct = pct(n / sum(n), 0))
-      message(sprintf("%s within 12 months (n=%d): state at the preceding visit", ev_label, sum(src$n)))
-      print(src)
-      save_table(src, paste0("alluvial_event_source_", ep))
-    }
-  }
+## ---- Figure 5: alluvial plots (objects only) --------------------------------------------------
+
+alluvial_subtitle <- function(st, locf) paste0(
+  "Event-free patients by Clinical Frailty Scale at each visit; ",
+  str_to_lower(levels(st$state)[5]), " is absorbing (dated on or before the visit)",
+  if (locf) "\nMissed visits between two attended visits carry the previous CFS forward" else
+    "\n\"No CFS\": still in the study but CFS not available at that visit (no imputation)")
+alluvial_title <- function(st) sprintf("CFS state and %s over the first year after CAR T (n=%d)",
+                                       str_to_lower(levels(st$state)[5]), n_distinct(st$study_id))
+
+fig5_pfs      <- plot_alluvial(states$pfs,      alluvial_title(states$pfs),      alluvial_subtitle(states$pfs, FALSE))
+fig5_pfs_locf <- plot_alluvial(states$pfs_locf, alluvial_title(states$pfs_locf), alluvial_subtitle(states$pfs_locf, TRUE))
+fig5_os       <- plot_alluvial(states$os,       alluvial_title(states$os),       alluvial_subtitle(states$os, FALSE))
+fig5_os_locf  <- plot_alluvial(states$os_locf,  alluvial_title(states$os_locf),  alluvial_subtitle(states$os_locf, TRUE))
+
+## ---- Figure 7: abstract figure = CFS trajectory (A) over the alluvial (B) ----------------------
+
+FIG7_XLIM <- c(-0.6, 12.6)   # identical x range in both panels so the visits line up
+
+fig7_top <- traj_panel("cfs_score", "Clinical Frailty Scale", "A. Clinical Frailty Scale over the first year",
+                       ls_data = mutate(lsmeans, pos = visit_pos(visit)), long_data = al, show_patients = TRUE,
+                       x_limits = FIG7_XLIM) +
+  scale_y_continuous(breaks = 1:7) +
+  coord_cartesian(ylim = c(1, 7)) +
+  labs(subtitle = sprintf(
+    # "Thin lines: individual patients; thick line: model-estimated mean (95%% CI); p %s",
+    "Thin lines: individual patients; thick line: estimated mean (95%% CI); p %s",
+                          fmt_p_traj(lsmeans$p_overall[lsmeans$var == "cfs_score"][1])))
+
+fig7_bottom <- plot_alluvial(states$pfs_locf,
+                             "B. CFS state and progression/death at each visit (n=78)",
+                             NULL, label_min = 4, x_limits = FIG7_XLIM) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 8.5))
+
+fig7 <- fig7_top / fig7_bottom + plot_layout(heights = c(1.8, 4))   # panel A = one third of the height
+
+## ---- Save ---------------------------------------------------------------------------------
+
+if (SAVE_FIGURES) {
+  save_figure(fig5_pfs,      "fig5_alluvial_cfs_pfs",      width = 10, height = 6)
+  save_figure(fig5_pfs_locf, "fig5_alluvial_cfs_pfs_locf", width = 10, height = 6)
+  save_figure(fig5_os,       "fig5_alluvial_cfs_os",       width = 10, height = 6)
+  save_figure(fig5_os_locf,  "fig5_alluvial_cfs_os_locf",  width = 10, height = 6)
+  save_figure(fig7,          "fig7_abstract_cfs_trajectory_alluvial", width = 8, height = 9.5)
 }
 
 message("12_alluvial_cfs.R complete.")

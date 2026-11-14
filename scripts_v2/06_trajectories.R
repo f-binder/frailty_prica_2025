@@ -30,7 +30,8 @@ al <- read_proc("analysis_long") %>% mutate(study_id = factor(study_id))
 
 outcomes <- c(
   cfs_score = "CFS", walk_mpers = "Gait speed (m/s)", walk_time = "4 m walk time (s)",
-  grip_average_kg = "Grip strength (kg)", minicog_score = "Mini-Cog", phq_total_score = "PHQ-9",
+  grip_average_kg = "Grip strength (kg)", grip_z = "Grip strength (z vs norms)",
+  grip_pctpred = "Grip strength (% predicted)", minicog_score = "Mini-Cog", phq_total_score = "PHQ-9",
   esas_wellbeing = "ESAS well-being", eortc_globalhealth = "EORTC global health",
   eortc_physicalfunction = "EORTC physical function", eortc_rolefunction = "EORTC role function",
   eortc_socialfunction = "EORTC social function", eortc_fatigue = "EORTC fatigue", eq5d_vas = "EQ-5D VAS"

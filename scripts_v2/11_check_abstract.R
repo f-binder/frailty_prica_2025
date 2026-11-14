@@ -47,7 +47,7 @@ expected <- tribble(
   "rho_baseline_cfs_ves13_score","value", 0.62,  2, "CFS vs VES-13 rho 0.62",
   "rho_baseline_cfs_walk_mpers", "value", -0.52, 2, "CFS vs gait speed -0.52",
   "rho_baseline_cfs_ecog",       "value", 0.50,  2, "CFS vs ECOG 0.50",
-  "rho_baseline_cfs_grip_average_kg", "value", -0.44, 2, "CFS vs grip -0.44",
+  "rho_baseline_cfs_grip",       "value", -0.48, 2, "CFS vs grip -0.48 (grip vs age/sex norms; raw kg -0.44)",
   "rho_post_cfs_gait_min",       "value", -0.60, 2, "post-infusion CFS vs gait -0.55 to -0.60",
   "rho_post_cfs_gait_max",       "value", -0.55, 2, "post-infusion CFS vs gait -0.55 to -0.60",
   "cfs_lsmean_baseline",         "value", 3.18,  2, "CFS 3.18 at baseline",

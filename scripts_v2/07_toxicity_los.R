@@ -21,7 +21,9 @@ d <- read_proc("analysis_wide")
 frailty_predictors <- c(
   cfs_score = "CFS (per point)", cfs_cat = "CFS >3", ves13_score = "VES-13 (per point)",
   ves_cat = "VES-13 >=3", walk_mpers = "Gait speed (per m/s)", gait_cat = "Gait <=0.8 m/s",
-  gait_slow_nd = "Gait slow or not done", grip_average_kg = "Grip strength (per kg)",
+  gait_slow_nd = "Gait slow or not done",
+  setNames(c(grip_z = "Grip strength (per SD vs norms)", grip_pctpred = "Grip strength (per % predicted)",
+             grip_average_kg = "Grip strength (per kg)")[[GRIP_VAR]], GRIP_VAR),
   minicog_score = "Mini-Cog (per point)", phq_total_score = "PHQ-9 (per point)",
   hctci_score = "HCT-CI (per point)", cirs_total = "CIRS (per point)"
 )
@@ -76,7 +78,7 @@ fit_nb <- function(predictor, adjust = character(), data = d, label = "") {
   cf <- coef(summary(fit))
   rows <- rownames(cf)[-1][!rownames(cf)[-1] %in% unlist(lapply(adjust, function(a) grep(paste0("^", a), rownames(cf), value = TRUE)))]
   map_dfr(rows, function(r) tibble(
-    predictor = all_predictors[predictor] %||% predictor, term = r,
+    predictor = coalesce(unname(all_predictors[predictor]), predictor), term = r,
     adjusted = if (length(adjust)) paste(adjust, collapse = " + ") else "none",
     analysis = label, rr = exp(cf[r, 1]),
     lo = exp(cf[r, 1] - 1.96 * cf[r, 2]), hi = exp(cf[r, 1] + 1.96 * cf[r, 2]),
@@ -89,7 +91,9 @@ los_models <- bind_rows(
   # sensitivity analyses for CFS
   fit_nb("cfs_score", ADJ, data = filter(d, cfs_score < 7), label = "adjusted; excluding CFS 7 (n=2)"),
   fit_nb("cfs_score", ADJ, data = filter(d, los_days < max(d$los_days)), label = "adjusted; excluding longest stay (99 d)"),
-  fit_nb("cfs_score", c(ADJ, "icans_any", "crs_g2"), label = "adjusted + ICANS + CRS>=2 (toxicity as mediator)")
+  fit_nb("cfs_score", c(ADJ, "icans_any", "crs_g2"), label = "adjusted + ICANS + CRS>=2 (toxicity as mediator)"),
+  # grip sensitivity: raw kg with sex in the model instead of the normative score
+  fit_nb("grip_average_kg", c(ADJ, "sex"), label = "sensitivity: raw grip (kg) + sex + age + log2 LDH")
 )
 save_table(los_models %>% mutate(across(c(rr, lo, hi), ~ round(.x, 2))), "los_models")
 message("\nLength of stay, rate ratio per unit (negative binomial); p < 0.10, plus all CFS models ", SIG_LEGEND, ":")

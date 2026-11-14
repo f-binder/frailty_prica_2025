@@ -27,7 +27,7 @@ al <- read_proc("analysis_long")
 
 uva_panel <- c("sex", "bridge_yn", "ecog_cat", "age", "ldh", "log2_ldh", "crp", "albumin", "hctci_score",
                "cirs_total", "ves13_score", "ves_cat", "cfs_score", "cfs_cat", "cfs_cat4",
-               "grip_average_kg", "walk_time", "walk_mpers", "gait_cat", "gait_slow_nd",
+               GRIP_VAR, "walk_time", "walk_mpers", "gait_cat", "gait_slow_nd",
                "minicog_score", "phq_total_score")
 
 uva <- bind_rows(
@@ -49,7 +49,7 @@ r <- get_uva("OS", "phq_total_score"); record("os_hr_phq", r$est, r$lo, r$hi, r$
 
 ## ---- B. Pre-specified adjusted models: measure + age + log2 LDH ---------------------------
 
-adj_measures <- c("cfs_score", "ves13_score", "ves_cat", "walk_mpers", "gait_slow_nd", "grip_average_kg",
+adj_measures <- c("cfs_score", "ves13_score", "ves_cat", "walk_mpers", "gait_slow_nd", GRIP_VAR,
                   "minicog_score", "phq_total_score", "hctci_score", "cirs_total")
 adjusted <- bind_rows(
   map_dfr(adj_measures, ~ cox_fit(paste("Surv(os_months, os_event) ~", .x, "+ age + log2_ldh"), d) %>%
@@ -65,6 +65,15 @@ r <- adjusted %>% filter(outcome == "OS", term == "cfs_score");  record("os_hr_c
 r <- adjusted %>% filter(outcome == "PFS", term == "cfs_score"); record("pfs_hr_cfs_adj", r$est, r$lo, r$hi, r$p)
 r <- adjusted %>% filter(outcome == "OS", term == "gait_slow_ndSlow or not done")
 record("os_hr_gait_slow_or_nd_adj", r$est, r$lo, r$hi, r$p)
+r <- get_uva("OS", GRIP_VAR);  record("os_hr_grip_unadj", r$est, r$lo, r$hi, r$p, note = GRIP_VAR)
+r <- adjusted %>% filter(outcome == "OS", term == GRIP_VAR); record("os_hr_grip_adj", r$est, r$lo, r$hi, r$p, note = GRIP_VAR)
+
+# Grip sensitivity: raw kg with sex added (instead of the age/sex-normative score)
+grip_sens <- bind_rows(
+  cox_fit("Surv(os_months, os_event) ~ grip_average_kg + sex + age + log2_ldh", d)[1, ] %>% mutate(outcome = "OS"),
+  cox_fit("Surv(pfs_months, pfs_event) ~ grip_average_kg + sex + age + log2_ldh", d)[1, ] %>% mutate(outcome = "PFS"))
+message("\nGrip sensitivity, raw kg + sex + age + log2 LDH ", SIG_LEGEND, ":")
+print(grip_sens %>% transmute(outcome, term, hr = fmt_ci(est, lo, hi), p = fmt_p_star(p), n, events))
 
 # Proportional hazards check for the main adjusted model
 zph <- cox.zph(coxph(Surv(os_months, os_event) ~ cfs_score + age + log2_ldh, data = d))
@@ -79,7 +88,7 @@ message(sprintf("\nCause of death: RM %d, NRM %d, unknown %d | standard definiti
 cr_specs <- expand_grid(
   definition = c("cause", "prog"),
   covs = list(c("cfs_score"), c("cfs_score", ADJ), c("ves13_score"), c("ves13_score", ADJ),
-              c("gait_slow_nd"), c("gait_slow_nd", ADJ)),
+              c("gait_slow_nd"), c("gait_slow_nd", ADJ), c(GRIP_VAR), c(GRIP_VAR, ADJ)),
   failcode = 1:2
 )
 
@@ -110,6 +119,8 @@ r <- pick("primary", "RM", "Fine-Gray", "cfs_score", "none");            record(
 r <- pick("primary", "NRM", "Fine-Gray", "cfs_score", "none");           record("nrm_shr_cfs_unadj", r$est, r$lo, r$hi, r$p)
 r <- pick("primary", "RM", "Fine-Gray", "cfs_score", "age + log2 LDH");  record("rm_shr_cfs_adj", r$est, r$lo, r$hi, r$p)
 r <- pick("primary", "NRM", "Fine-Gray", "cfs_score", "age + log2 LDH"); record("nrm_shr_cfs_adj", r$est, r$lo, r$hi, r$p)
+r <- pick("primary", "RM", "Fine-Gray", GRIP_VAR, "none");  record("rm_shr_grip_unadj", r$est, r$lo, r$hi, r$p, note = GRIP_VAR)
+r <- pick("primary", "NRM", "Fine-Gray", GRIP_VAR, "none"); record("nrm_shr_grip_unadj", r$est, r$lo, r$hi, r$p, note = GRIP_VAR)
 
 ## ---- D. Time-varying CFS ------------------------------------------------------------------
 # Counting-process data built with tmerge(); the CFS value is carried forward

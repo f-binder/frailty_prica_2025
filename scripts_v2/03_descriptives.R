@@ -43,7 +43,7 @@ cat_vars <- c("sex", "lym_nhl", "cart_product", "cart_line", "bridge_yn", "asct"
               "ecog", "karnofsky", "cfs_cat", "ves_cat", "gait_cat", "crs_yn", "crs_highestgrade",
               "icans_yn", "icans_highest", "icu_yn")
 cont_vars <- c("age", "ldh", "crp", "albumin", "hctci_score", "cirs_total", "ves13_score", "cfs_score",
-               "grip_average_kg", "walk_mpers", "minicog_score", "phq_total_score", "los_days")
+               "grip_average_kg", "grip_z", "grip_pctpred", "walk_mpers", "minicog_score", "phq_total_score", "los_days")
 
 table1_cat  <- map_dfr(cat_vars, describe_cat)
 table1_cont <- map_dfr(cont_vars, describe_cont)

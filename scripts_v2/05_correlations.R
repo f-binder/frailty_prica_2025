@@ -33,7 +33,7 @@ measures <- c(
   cfs_score              = "CFS",
   ves13_score            = "VES-13",
   walk_mpers             = "Gait speed",
-  grip_average_kg        = "Grip strength",
+  grip_average_kg        = "Grip strength",   # renamed to GRIP_VAR below
   minicog_score          = "Mini-Cog",
   phq_total_score        = "PHQ-9",
   ecog                   = "ECOG",
@@ -43,6 +43,8 @@ measures <- c(
   eortc_physicalfunction = "EORTC physical",
   age                    = "Age"
 )
+# grip strength enters as GRIP_VAR (00_setup.R: age/sex-normative z-score by default)
+names(measures)[names(measures) == "grip_average_kg"] <- GRIP_VAR
 
 ## ---- A. Distributions at baseline ------------------------------------------------------
 
@@ -141,18 +143,29 @@ print(corr_baseline %>% filter(abs(rho) >= 0.4) %>% arrange(desc(abs(rho))) %>%
         transmute(measure1, measure2, rho = round(rho, 2), n), n = Inf)
 
 rho_cfs <- function(v) cfs_corr %>% filter(var2 == v)
-for (v in c("ves13_score", "walk_mpers", "ecog", "grip_average_kg", "minicog_score", "age", "phq_total_score")) {
+for (v in c("ves13_score", "walk_mpers", "ecog", GRIP_VAR, "minicog_score", "age", "phq_total_score")) {
   r <- rho_cfs(v)
-  record(paste0("rho_baseline_cfs_", v), r$rho, lo = r$lo, hi = r$hi, p = r$p, note = paste("n =", r$n))
+  key <- if (v == GRIP_VAR) "grip" else v   # stable key whichever grip variable is used
+  record(paste0("rho_baseline_cfs_", key), r$rho, lo = r$lo, hi = r$hi, p = r$p,
+         note = paste0("n = ", r$n, if (v == GRIP_VAR) paste0("; ", GRIP_VAR) else ""))
 }
+# sensitivity: raw grip (kg) and grip vs age, for comparison with the normative score
+r_kg <- spearman_ci(d$cfs_score, d$grip_average_kg)
+record("rho_baseline_cfs_grip_kg", r_kg$rho, lo = r_kg$lo, hi = r_kg$hi, p = r_kg$p, note = "raw kg (sensitivity)")
+r_age <- spearman_ci(d$age, d[[GRIP_VAR]])
+record("rho_baseline_age_grip", r_age$rho, lo = r_age$lo, hi = r_age$hi, p = r_age$p,
+       note = paste(GRIP_VAR, "- norms already account for age; a non-zero value means the norms over/under-correct"))
+message(sprintf("Grip: CFS vs %s rho %.2f; CFS vs raw kg %.2f; age vs %s %.2f (p %s)",
+                GRIP_VAR, rho_cfs(GRIP_VAR)$rho, r_kg$rho, GRIP_VAR, r_age$rho, fmt_p(r_age$p)))
 mc <- corr_baseline %>% filter((var1 == "minicog_score" | var2 == "minicog_score"),
-                               (var1 %in% c("cfs_score", "walk_mpers", "grip_average_kg") |
-                                  var2 %in% c("cfs_score", "walk_mpers", "grip_average_kg")))
+                               (var1 %in% c("cfs_score", "walk_mpers", GRIP_VAR) |
+                                  var2 %in% c("cfs_score", "walk_mpers", GRIP_VAR)))
 record("rho_baseline_minicog_physical_max_abs", max(abs(mc$rho)), note = "Mini-Cog vs CFS, gait, grip")
 ag <- corr_baseline %>% filter((var1 == "age" | var2 == "age"),
                                (var1 %in% c("cfs_score", "walk_mpers", "grip_average_kg") |
                                   var2 %in% c("cfs_score", "walk_mpers", "grip_average_kg")))
-record("rho_baseline_age_physical_max_abs", max(abs(ag$rho)), note = "age vs CFS, gait, grip")
+# raw grip (kg) here on purpose: the normative grip score has age built in
+record("rho_baseline_age_physical_max_abs", max(abs(ag$rho)), note = "age vs CFS, gait, raw grip (kg)")
 
 # Correlation heatmap, measures collected throughout the study only
 # (exploratory: all of them, including Karnofsky and HCT-CI, unlike Figure 1B).
@@ -197,7 +210,7 @@ message("\nCFS by ECOG (baseline):"); print(table(CFS = d$cfs_score, ECOG = d$ec
 
 ## ---- D. Correlation of CFS with other measures, by visit --------------------------------------
 
-visit_measures <- c(walk_mpers = "Gait speed", grip_average_kg = "Grip strength",
+visit_measures <- c(walk_mpers = "Gait speed", setNames("Grip strength", GRIP_VAR),
                     minicog_score = "Mini-Cog", phq_total_score = "PHQ-9",
                     eortc_physicalfunction = "EORTC physical", eortc_globalhealth = "EORTC global health",
                     esas_tiredness = "ESAS tiredness")
